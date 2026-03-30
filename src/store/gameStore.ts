@@ -7,6 +7,7 @@ import {
   humanStay,
   executeAITurn,
   continueFlipThree,
+  nextTurn,
 } from '../engine/game';
 
 interface GameStore {
@@ -14,7 +15,7 @@ interface GameStore {
   isAIThinking: boolean;
 
   // Actions
-  startGame: (difficulty?: Difficulty) => void;
+  startGame: (difficulty?: Difficulty, aiCount?: number) => void;
   hit: () => void;
   stay: () => void;
   startNextRound: () => void;
@@ -27,8 +28,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
   isAIThinking: false,
 
-  startGame: (difficulty: Difficulty = 'easy') => {
-    const initial = initGame(difficulty);
+  startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
+    const initial = initGame(difficulty, aiCount);
     const afterDeal = startRound(initial);
     set({ gameState: afterDeal, isAIThinking: false });
 
@@ -49,6 +50,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Resolve any pending Flip Three that targets someone
     newState = resolveFlipThreeIfPending(newState);
+
+    // If the active player is no longer active (e.g. self-Freeze or busted from own Flip Three)
+    if (newState.phase === 'play') {
+      const activePlayer = newState.players[newState.activePlayerIndex];
+      if (activePlayer && activePlayer.status !== 'active') {
+        newState = nextTurn(newState);
+      }
+    }
 
     set({ gameState: newState });
     scheduleAIIfNeeded(newState, set, get);
@@ -108,6 +117,14 @@ function scheduleAIIfNeeded(
 
     // Resolve any Flip Three that the AI's action created
     newState = resolveFlipThreeIfPending(newState);
+
+    // If the active player is no longer active (e.g. self-Freeze or busted from own Flip Three)
+    if (newState.phase === 'play') {
+      const activePlayer = newState.players[newState.activePlayerIndex];
+      if (activePlayer && activePlayer.status !== 'active') {
+        newState = nextTurn(newState);
+      }
+    }
 
     set({ gameState: newState, isAIThinking: false });
 

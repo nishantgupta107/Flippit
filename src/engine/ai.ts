@@ -1,5 +1,5 @@
 import type { Difficulty, GameState, PlayerState } from './types';
-import { calculateRoundScore, checkFlip7 } from './scoring';
+import { calculateRoundScore } from './scoring';
 
 /**
  * Calculate the bust probability for the next card drawn.
@@ -105,6 +105,8 @@ export function selectFlipThreeTarget(aiId: string, state: GameState): string | 
   const targets = state.players.filter(
     (p) => p.id !== aiId && p.status === 'active'
   );
-  if (targets.length === 0) return null;
+  if (targets.length === 0) {
+    return aiId;
+  }
   return [...targets].sort((a, b) => b.numberCards.length - a.numberCards.length)[0].id;
 }

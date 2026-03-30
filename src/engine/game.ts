@@ -1,6 +1,6 @@
 import type { Card, Difficulty, GameState, PlayerState } from './types';
 import { buildDeck, drawCard, shuffle } from './deck';
-import { applyRoundScores, calculateRoundScore, checkFlip7, checkWinCondition } from './scoring';
+import { applyRoundScores, checkFlip7, checkWinCondition } from './scoring';
 import { hitPlayer, stayPlayer } from './player';
 import { resolveFreeze, resolveSecondChance, startFlipThree, continueFlipThree } from './actions';
 import { aiDecide, selectFreezeTarget, selectFlipThreeTarget } from './ai';
@@ -23,18 +23,24 @@ function makePlayer(id: string, name: string, isAI: boolean, difficulty?: Diffic
 }
 
 /**
- * Create the initial game state for a 1 human vs 1 AI game.
+ * Create the initial game state.
+ * Supports 1 human vs up to 3 AI opponents.
  */
-export function initGame(aiDifficulty: Difficulty = 'easy'): GameState {
+export function initGame(aiDifficulty: Difficulty = 'easy', aiCount: number = 1): GameState {
   const deck = shuffle(buildDeck());
   const human = makePlayer('human', 'You', false);
-  const ai = makePlayer('ai', 'CPU', true, aiDifficulty);
+  
+  const players: PlayerState[] = [human];
+  
+  for (let i = 0; i < Math.min(Math.max(aiCount, 1), 3); i++) {
+    players.push(makePlayer(`ai-${i + 1}`, `CPU ${i + 1}`, true, aiDifficulty));
+  }
 
   return {
     phase: 'deal',
     drawPile: deck,
     discardPile: [],
-    players: [human, ai],
+    players: players,
     dealerIndex: 0,
     activePlayerIndex: 1, // player left of dealer goes first
     roundNumber: 1,
@@ -248,12 +254,13 @@ export function humanHit(state: GameState): GameState {
     // Resolve the action card
     s = resolveActionCard(s, event.card, humanPlayer.id);
 
-    // If a Flip Three was started, it needs to be resolved before advancing
-    if (s.pendingAction?.type === 'flip_three') {
-      return s; // Caller (store) will call continueFlipThree in a loop
+    // If the action directly deactivated the human (e.g., self-Freeze)
+    const updatedHuman = s.players.find((p) => p.id === humanPlayer.id);
+    if (updatedHuman && updatedHuman.status !== 'active') {
+      return nextTurn(s);
     }
 
-    return nextTurn(s);
+    return s;
   }
 
   // Normal card drawn — stay on human's turn, let them decide again
@@ -319,11 +326,18 @@ export function executeAITurn(state: GameState): GameState {
         break;
       }
     }
-    return nextTurn(s);
+    
+    // Check if the AI became inactive (e.g. self-Freeze or busted from own Flip Three)
+    const updatedAI = s.players.find((p) => p.id === aiPlayer.id);
+    if (updatedAI && updatedAI.status !== 'active' && s.phase === 'play') {
+      return nextTurn(s);
+    }
+    
+    return s;
   }
 
-  // Normal card — AI's turn ends after hitting
-  return nextTurn(s);
+  // Normal card — AI's turn continues so they can hit again
+  return s;
 }
 
 // Re-export continueFlipThree for the store to use

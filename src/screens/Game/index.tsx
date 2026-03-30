@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../store/gameStore';
 import type { Card, PlayerState } from '../../engine/types';
+import { calculateRoundScore } from '../../engine/scoring';
 
 // ─── Card Display ─────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ function PlayerPanel({
         {statusEmoji} {player.name} {player.isAI ? '(CPU)' : '(You)'}
       </strong>
       <span style={{ marginLeft: 12, color: '#ffe792' }}>
-        Total: {player.totalScore} | Round: {player.roundScore}
+        Total: {player.totalScore} | Round: {calculateRoundScore(player)}
       </span>
 
       <div style={{ marginTop: 8 }}>
