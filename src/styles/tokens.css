@@ -1,0 +1,64 @@
+/* src/styles/tokens.css */
+:root {
+  /* Surfaces */
+  --surface:                   #001209;
+  --surface-container-low:     #00180e;
+  --surface-container:         #001f13;
+  --surface-container-high:    #002518;
+  --surface-container-highest: #002c1d;
+  --surface-bright:            #003322;
+  --surface-variant:           rgba(0, 44, 29, 0.6); /* For backdrop-blur */
+  --surface-tint:              rgba(255, 231, 146, 0.08); /* 8% opacity tint */
+
+  /* Primary (Gold) */
+  --primary:                   #ffe792;
+  --primary-container:         #ffd709;
+  --on-primary-fixed:          #453900;
+  --primary-gradient:          linear-gradient(135deg, #ffe792, #ffd709);
+
+  /* Secondary (Coral) */
+  --secondary:                 #fe7e4f;
+  
+  /* Tertiary (Cyan) */
+  --tertiary:                  #68d3ff;
+
+  /* Text */
+  --on-surface:                #c8f5dc;
+  --on-surface-variant:        #89b59e;
+
+  /* Error */
+  --error:                     #d7383b;
+  --error-container:           #9f0519;
+
+  /* Outline */
+  --outline-variant:           rgba(38, 80, 62, 0.15); /* 15% opacity */
+
+  /* Typography */
+  --font-display:              'Noto Serif', serif;
+  --font-body:                 'Plus Jakarta Sans', sans-serif;
+
+  /* Spacing scale */
+  --space-1:   0.25rem;
+  --space-2:   0.5rem;
+  --space-3:   0.75rem;
+  --space-4:   1rem;
+  --space-6:   1.5rem;
+  --space-8:   2rem;
+  --space-10:  2.5rem;
+  --space-12:  3rem;
+  --space-20:  5rem;
+
+  /* Radius */
+  --radius-sm:   0.25rem;
+  --radius-md:   0.75rem;
+  --radius-lg:   1rem;
+  --radius-xl:   1.5rem;
+  --radius-full: 9999px;
+
+  /* Shadows (emerald-tinted, low opacity) */
+  --shadow-float: 0 32px 32px 0 rgba(0, 0, 0, 0.08);
+  --shadow-active: 0 0 24px 0 rgba(155, 168, 255, 0.06); /* Luminous accent */
+
+  /* Glass */
+  --glass-blur: 20px;
+}

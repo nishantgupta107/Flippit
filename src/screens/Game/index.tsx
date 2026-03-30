@@ -1,114 +1,76 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
-import type { Card, PlayerState } from '../../engine/types';
 import { calculateRoundScore } from '../../engine/scoring';
+import type { PlayerState } from '../../engine/types';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { ScoreHUD } from '../../components/ui/ScoreHUD';
+import { Chip } from '../../components/ui/Chip';
 
-// ─── Card Display ─────────────────────────────────────────────────────────────
+// ─── Player Hand View ─────────────────────────────────────────────────────────
 
-function CardBadge({ card }: { card: Card }) {
-  const label =
-    card.type === 'number'
-      ? String(card.value)
-      : card.type === 'modifier'
-      ? card.modifier!
-      : card.action === 'freeze'
-      ? '❄️FREEZE'
-      : card.action === 'flip_three'
-      ? '🔄FLIP3'
-      : '⭐SC';
-
-  const bg =
-    card.type === 'number'
-      ? '#2a6'
-      : card.type === 'modifier'
-      ? '#68d3ff'
-      : '#fe7e4f';
-
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '4px 10px',
-        margin: '2px',
-        borderRadius: 6,
-        background: bg,
-        color: '#fff',
-        fontWeight: 700,
-        fontSize: 14,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-// ─── Player Panel ─────────────────────────────────────────────────────────────
-
-function PlayerPanel({
-  player,
-  isActive,
-}: {
-  player: PlayerState;
-  isActive: boolean;
-}) {
-  const border = isActive ? '3px solid #ffe792' : '1px solid #444';
+function PlayerHand({ player, isActive }: { player: PlayerState; isActive: boolean }) {
+  const roundScore = calculateRoundScore(player);
+  
   const statusEmoji =
-    player.status === 'active'
-      ? '🟢'
-      : player.status === 'stayed'
-      ? '🏦'
-      : player.status === 'busted'
-      ? '💥'
-      : '❄️';
+    player.status === 'active' ? '🟢' :
+    player.status === 'stayed' ? '🏦' :
+    player.status === 'busted' ? '💥' : '❄️';
 
   return (
-    <div
-      id={`player-panel-${player.id}`}
-      style={{
-        border,
-        borderRadius: 10,
-        padding: '1rem',
-        margin: '0.5rem 0',
-        background: '#011f10',
-      }}
-    >
-      <strong>
-        {statusEmoji} {player.name} {player.isAI ? '(CPU)' : '(You)'}
-      </strong>
-      <span style={{ marginLeft: 12, color: '#ffe792' }}>
-        Total: {player.totalScore} | Round: {calculateRoundScore(player)}
-      </span>
+    <div style={{
+      background: isActive ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
+      borderRadius: 'var(--radius-lg)',
+      padding: 'var(--space-4)',
+      border: isActive ? '2px solid var(--primary)' : '1px solid transparent',
+      transition: 'all 0.3s ease',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 'var(--space-3)',
+      width: '100%',
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <span style={{ fontSize: '1.25rem' }}>{statusEmoji}</span>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{player.name}</span>
+          {player.isAI && <Chip label="CPU" variant="outline" />}
+        </div>
+        <ScoreHUD score={roundScore} label="Round" />
+      </div>
 
-      <div style={{ marginTop: 8 }}>
-        {player.numberCards.length > 0 && (
-          <div>
-            <span style={{ fontSize: 12, color: '#7ab890' }}>Numbers: </span>
-            {player.numberCards.map((c) => (
-              <CardBadge key={c.id} card={c} />
-            ))}
-          </div>
-        )}
-        {player.modifierCards.length > 0 && (
-          <div>
-            <span style={{ fontSize: 12, color: '#7ab890' }}>Modifiers: </span>
+      {/* Cards Area */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minHeight: '120px' }}>
+        {/* Modifiers & Actions */}
+        {(player.modifierCards.length > 0 || player.actionCards.length > 0) && (
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             {player.modifierCards.map((c) => (
-              <CardBadge key={c.id} card={c} />
+               <Chip key={c.id} label={c.modifier!} variant="multiplier" />
             ))}
-          </div>
-        )}
-        {player.actionCards.length > 0 && (
-          <div>
-            <span style={{ fontSize: 12, color: '#7ab890' }}>Action cards: </span>
             {player.actionCards.map((c) => (
-              <CardBadge key={c.id} card={c} />
+               <Chip key={c.id} label={c.action!} variant="action" />
             ))}
           </div>
         )}
-        {player.numberCards.length === 0 &&
-          player.modifierCards.length === 0 &&
-          player.actionCards.length === 0 && (
-            <span style={{ color: '#7ab890', fontSize: 12 }}>(no cards)</span>
+
+        {/* Number Cards Row (Overlapping) */}
+        <div style={{ display: 'flex', flexWrap: 'nowrap', position: 'relative', height: '112px' }}>
+          {player.numberCards.length === 0 ? (
+            <div style={{ color: 'var(--on-surface-variant)', fontSize: '0.875rem', marginTop: 'var(--space-4)' }}>No cards drawn.</div>
+          ) : (
+            player.numberCards.map((c, i) => (
+              <div key={c.id} style={{ 
+                position: i === 0 ? 'relative' : 'absolute',
+                left: i === 0 ? 0 : `${i * 35}px`,
+                zIndex: i,
+              }}>
+                <Card card={c} />
+              </div>
+            ))
           )}
+        </div>
       </div>
     </div>
   );
@@ -118,294 +80,236 @@ function PlayerPanel({
 
 export function Game() {
   const navigate = useNavigate();
-  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame } =
-    useGameStore();
+  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame } = useGameStore();
 
   if (!gameState) {
     return (
-      <div style={{ padding: '2rem' }}>
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
         <p>No game in progress.</p>
-        <button onClick={() => navigate('/')}>Back to Home</button>
+        <Button onClick={() => navigate('/')}>Back</Button>
       </div>
     );
   }
 
-  const { phase, players, activePlayerIndex, roundNumber, drawPile, discardPile, lastEvent, winner } =
-    gameState;
-
-  const humanPlayer = players.find((p) => !p.isAI);
+  const { phase, players, activePlayerIndex, roundNumber, drawPile, discardPile, lastEvent, winner } = gameState;
+  
   const humanIdx = players.findIndex((p) => !p.isAI);
+  const humanPlayer = players[humanIdx];
   const isHumanTurn = activePlayerIndex === humanIdx && phase === 'play';
-  const canAct =
-    isHumanTurn &&
-    !isAIThinking &&
-    humanPlayer?.status === 'active';
+  const canAct = isHumanTurn && !isAIThinking && humanPlayer?.status === 'active';
+
+  // Separate AI from Human
+  const aiPlayers = players.filter(p => p.isAI);
 
   return (
-    <div
-      id="game-screen"
-      style={{
-        padding: '1rem',
-        maxWidth: 600,
-        margin: '0 auto',
-        fontFamily: 'sans-serif',
-        color: '#c8f5dc',
-        background: '#001209',
-        minHeight: '100vh',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          borderBottom: '1px solid #044228',
-          paddingBottom: 8,
-          marginBottom: 12,
-        }}
-      >
-        <h2 id="round-indicator" style={{ margin: 0, color: '#ffe792' }}>
-          Round {roundNumber}
-        </h2>
-        <div style={{ fontSize: 13, color: '#7ab890' }}>
-          🃏 Draw: {drawPile.length} | 🗑️ Discard: {discardPile.length}
-        </div>
-        <button
-          id="btn-quit"
-          onClick={() => {
-            resetGame();
-            navigate('/');
-          }}
-          style={{ padding: '4px 12px' }}
-        >
-          Quit
-        </button>
-      </div>
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--surface)',
+      color: 'var(--on-surface)',
+      fontFamily: 'var(--font-body)',
+      display: 'flex',
+      flexDirection: 'column',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      {/* Subtle Background Glow */}
+      <div style={{
+        position: 'absolute',
+        top: '30%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '100vw',
+        height: '100vw',
+        background: 'radial-gradient(circle, var(--surface-tint) 0%, transparent 60%)',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }} />
 
-      {/* Last Event Banner */}
-      {lastEvent && lastEvent.kind !== 'round_end' && lastEvent.kind !== 'game_over' && (
-        <div
-          id="event-banner"
-          style={{
-            background: '#033520',
-            border: '1px solid #0a5c38',
-            borderRadius: 8,
-            padding: '8px 12px',
-            marginBottom: 12,
-            fontSize: 14,
-          }}
-        >
-          {lastEvent.kind === 'bust' && (
-            <span>💥 {players.find((p) => p.id === lastEvent.playerId)?.name} busted!</span>
-          )}
-          {lastEvent.kind === 'stay' && (
-            <span>🏦 {players.find((p) => p.id === lastEvent.playerId)?.name} stayed.</span>
-          )}
-          {lastEvent.kind === 'freeze' && (
-            <span>❄️ {lastEvent.message}</span>
-          )}
-          {lastEvent.kind === 'flip_three_start' && (
-            <span>🔄 {lastEvent.message}</span>
-          )}
-          {lastEvent.kind === 'flip_seven' && (
-            <span style={{ color: '#ffe792', fontWeight: 700 }}>
-              🎉 FLIP 7! {players.find((p) => p.id === lastEvent.playerId)?.name} got 7 unique cards!
-            </span>
-          )}
-          {lastEvent.kind === 'second_chance_used' && (
-            <span>⭐ Second Chance saved {players.find((p) => p.id === lastEvent.playerId)?.name}!</span>
-          )}
-          {lastEvent.kind === 'second_chance_passed' && (
-            <span>⭐ {lastEvent.message}</span>
-          )}
-          {lastEvent.kind === 'card_drawn' && lastEvent.card && (
-            <span>
-              Drew:{' '}
-              {lastEvent.card.type === 'number'
-                ? lastEvent.card.value
-                : lastEvent.card.modifier ?? lastEvent.card.action}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* AI Thinking */}
-      {isAIThinking && (
-        <div
-          id="ai-thinking"
-          style={{ textAlign: 'center', padding: 8, color: '#7ab890', fontSize: 13 }}
-        >
-          🤔 CPU is thinking...
-        </div>
-      )}
-
-      {/* Active Player Indicator */}
-      {phase === 'play' && (
-        <div
-          id="active-player-indicator"
-          style={{ fontSize: 13, color: '#7ab890', marginBottom: 8 }}
-        >
-          Active: {players[activePlayerIndex]?.name ?? '—'}
-        </div>
-      )}
-
-      {/* Player Panels */}
-      {players.map((p, idx) => (
-        <PlayerPanel key={p.id} player={p} isActive={idx === activePlayerIndex && phase === 'play'} />
-      ))}
-
-      {/* Action Buttons */}
-      {phase === 'play' && (
-        <div style={{ display: 'flex', gap: '1rem', marginTop: 16 }}>
-          <button
-            id="btn-hit"
-            onClick={hit}
-            disabled={!canAct}
-            style={{
-              flex: 1,
-              padding: '12px',
-              background: canAct ? '#ffe792' : '#444',
-              color: canAct ? '#1a1200' : '#888',
-              border: 'none',
-              borderRadius: 24,
-              fontWeight: 700,
-              fontSize: 16,
-              cursor: canAct ? 'pointer' : 'not-allowed',
-            }}
-          >
-            HIT
-          </button>
-          <button
-            id="btn-stay"
-            onClick={stay}
-            disabled={!canAct}
-            style={{
-              flex: 1,
-              padding: '12px',
-              background: canAct ? '#fe7e4f' : '#444',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 12,
-              fontWeight: 700,
-              fontSize: 16,
-              cursor: canAct ? 'pointer' : 'not-allowed',
-            }}
-          >
-            STAY
+      {/* Top Bar */}
+      <header style={{ 
+        padding: 'var(--space-4)', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        zIndex: 1,
+        borderBottom: '1px solid var(--outline-variant)'
+      }}>
+        <ScoreHUD score={humanPlayer?.totalScore ?? 0} label="Total Score" />
+        <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--primary)' }}>Round {roundNumber}</span>
+          <button onClick={() => { resetGame(); navigate('/'); }} style={{
+            background: 'transparent', border: 'none', color: 'var(--on-surface-variant)', fontSize: '1rem'
+          }}>
+            Quit
           </button>
         </div>
-      )}
+      </header>
 
-      {/* Round End Summary */}
-      {phase === 'round_end' && (
-        <div
-          id="round-summary"
-          style={{
-            marginTop: 24,
-            padding: '1rem',
-            background: '#02291a',
-            borderRadius: 12,
-            border: '1px solid #044228',
-          }}
-        >
-          <h3 style={{ color: '#ffe792', marginTop: 0 }}>Round {roundNumber - 1} Summary</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ color: '#7ab890', fontSize: 13, textAlign: 'left' }}>
-                <th>Player</th>
-                <th>Round</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {players.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td style={{ color: p.roundScore > 0 ? '#ffe792' : '#fe7e4f' }}>
-                    {p.status === 'busted' ? '💥 0' : `+${p.roundScore}`}
-                  </td>
-                  <td>{p.totalScore}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button
-            id="btn-next-round"
-            onClick={startNextRound}
+      {/* Main Play Area */}
+      <main style={{ 
+        flex: 1, 
+        padding: 'var(--space-4)', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: 'var(--space-6)',
+        zIndex: 1,
+        overflowY: 'auto',
+      }}>
+        
+        {/* Opponents Area */}
+        {aiPlayers.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: aiPlayers.length > 1 ? '1fr 1fr' : '1fr', gap: 'var(--space-4)' }}>
+            {aiPlayers.map(ai => (
+              <PlayerHand 
+                key={ai.id} 
+                player={ai} 
+                isActive={players[activePlayerIndex]?.id === ai.id && phase === 'play'} 
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Center Table (Draw/Discard & Events) */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-8)', margin: 'var(--space-4) 0' }}>
+          <div style={{ position: 'relative' }}>
+             <Card isFaceDown />
+             <div style={{ position: 'absolute', bottom: -20, left: 0, right: 0, textAlign: 'center', fontSize: '0.75rem', color: 'var(--on-surface-variant)' }}>{drawPile.length} cards</div>
+          </div>
+          <div style={{ position: 'relative' }}>
+             {discardPile.length > 0 ? (
+               <Card card={discardPile[discardPile.length - 1]} />
+             ) : (
+               <div style={{ width: '80px', height: '112px', border: '1px dashed var(--outline-variant)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-surface-variant)' }}>Discard</div>
+             )}
+          </div>
+        </div>
+
+        {/* Event Toast */}
+        <AnimatePresence>
+          {lastEvent && lastEvent.kind !== 'round_end' && lastEvent.kind !== 'game_over' && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              style={{
+                background: 'var(--surface-variant)',
+                backdropFilter: 'blur(10px)',
+                padding: '0.5rem 1rem',
+                borderRadius: 'var(--radius-full)',
+                alignSelf: 'center',
+                textAlign: 'center',
+                border: '1px solid var(--outline-variant)',
+                fontSize: '0.875rem'
+              }}
+            >
+              <strong style={{ color: 'var(--primary)' }}>{players.find((p) => p.id === lastEvent.playerId)?.name}:</strong> {lastEvent.message || lastEvent.kind.replace('_', ' ')}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {isAIThinking && (
+           <div style={{ textAlign: 'center', color: 'var(--tertiary)', fontSize: '0.875rem', animation: 'pulse 1.5s infinite' }}>Thinking...</div>
+        )}
+
+        {/* Human Area */}
+        {humanPlayer && (
+          <div style={{ marginTop: 'auto' }}>
+            <PlayerHand 
+              player={humanPlayer} 
+              isActive={players[activePlayerIndex]?.id === humanPlayer.id && phase === 'play'} 
+            />
+          </div>
+        )}
+      </main>
+
+      {/* Footer / Controls */}
+      <footer style={{
+        padding: 'var(--space-4)',
+        background: 'var(--surface-container-highest)',
+        borderTop: '1px solid var(--outline-variant)',
+        display: 'flex',
+        gap: 'var(--space-4)',
+        zIndex: 2,
+      }}>
+        {phase === 'play' && (
+          <>
+            <Button 
+              style={{ flex: 1 }} 
+              disabled={!canAct} 
+              onClick={hit}
+            >
+              HIT
+            </Button>
+            <Button 
+              variant="secondary" 
+              style={{ flex: 1 }} 
+              disabled={!canAct} 
+              onClick={stay}
+            >
+              STAY
+            </Button>
+          </>
+        )}
+      </footer>
+
+      {/* Overlay Modals (Round End & Game Over) */}
+      <AnimatePresence>
+        {(phase === 'round_end' || phase === 'game_over') && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             style={{
-              marginTop: 12,
+              position: 'absolute', inset: 0,
+              background: 'rgba(0,18,9,0.85)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 100,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 'var(--space-6)'
+            }}
+          >
+            <div style={{
+              background: 'var(--surface-container-high)',
+              border: '1px solid var(--outline-variant)',
+              borderRadius: 'var(--radius-xl)',
+              padding: 'var(--space-8)',
               width: '100%',
-              padding: '10px',
-              background: '#ffe792',
-              color: '#1a1200',
-              border: 'none',
-              borderRadius: 24,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Next Round →
-          </button>
-        </div>
-      )}
+              maxWidth: 400,
+              display: 'flex', flexDirection: 'column', gap: 'var(--space-6)',
+              boxShadow: 'var(--shadow-float)'
+            }}>
+              <h2 style={{ fontFamily: 'var(--font-display)', color: 'var(--primary)', textAlign: 'center', fontSize: '2rem' }}>
+                {phase === 'game_over' ? '🏆 Game Over' : `Round ${roundNumber - 1} Summary`}
+              </h2>
+              
+              {phase === 'game_over' && (
+                <div style={{ textAlign: 'center', fontSize: '1.25rem', marginBottom: 'var(--space-4)' }}>
+                  {players.find((p) => p.id === winner)?.name} wins!
+                </div>
+              )}
 
-      {/* Game Over */}
-      {phase === 'game_over' && (
-        <div
-          id="game-over"
-          style={{
-            marginTop: 24,
-            padding: '1.5rem',
-            background: '#02291a',
-            borderRadius: 12,
-            border: '2px solid #ffe792',
-            textAlign: 'center',
-          }}
-        >
-          <h2 style={{ color: '#ffe792', marginTop: 0 }}>🏆 Game Over!</h2>
-          <p style={{ fontSize: 20 }}>
-            {players.find((p) => p.id === winner)?.name ?? 'Unknown'} wins!
-          </p>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
-            <thead>
-              <tr style={{ color: '#7ab890', textAlign: 'left' }}>
-                <th>Player</th>
-                <th>Final Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...players]
-                .sort((a, b) => b.totalScore - a.totalScore)
-                .map((p) => (
-                  <tr key={p.id} style={{ color: p.id === winner ? '#ffe792' : '#c8f5dc' }}>
-                    <td>{p.id === winner ? '👑 ' : ''}{p.name}</td>
-                    <td>{p.totalScore}</td>
-                  </tr>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                {[...players].sort((a, b) => b.totalScore - a.totalScore).map(p => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: 'var(--surface-container-low)', borderRadius: 'var(--radius-md)' }}>
+                    <span>{p.name} {p.id === winner && phase === 'game_over' ? '👑' : ''}</span>
+                    <strong style={{ color: p.roundScore > 0 ? 'var(--primary)' : 'var(--on-surface-variant)' }}>
+                      {phase === 'round_end' && `(+${p.roundScore}) `}
+                      {p.totalScore}
+                    </strong>
+                  </div>
                 ))}
-            </tbody>
-          </table>
-          <button
-            id="btn-play-again"
-            onClick={() => {
-              resetGame();
-              navigate('/');
-            }}
-            style={{
-              padding: '12px 32px',
-              background: '#ffe792',
-              color: '#1a1200',
-              border: 'none',
-              borderRadius: 24,
-              fontWeight: 700,
-              fontSize: 16,
-              cursor: 'pointer',
-            }}
-          >
-            Play Again
-          </button>
-        </div>
-      )}
+              </div>
+
+              {phase === 'round_end' ? (
+                <Button onClick={startNextRound}>Next Round</Button>
+              ) : (
+                <Button onClick={() => { resetGame(); navigate('/'); }}>Play Again</Button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

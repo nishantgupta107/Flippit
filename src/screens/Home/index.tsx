@@ -1,47 +1,61 @@
-import { useState } from 'react';
+// Removed unused React import
 import { useNavigate } from 'react-router-dom';
-import { useGameStore } from '../../store/gameStore';
-import type { Difficulty } from '../../engine/types';
+import { Button } from '../../components/ui/Button';
 
 export function Home() {
   const navigate = useNavigate();
-  const startGame = useGameStore((s) => s.startGame);
-  const [aiCount, setAiCount] = useState<number>(1);
-
-  function handleStart(difficulty: Difficulty) {
-    startGame(difficulty, aiCount);
-    navigate('/game');
-  }
 
   return (
-    <div id="home-screen" style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-      <h1>🃏 Flip 7</h1>
-      <p>Collect 7 unique number cards — or bust trying.</p>
-      <hr />
-      
-      <h2>Opponents</h2>
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        {[1, 2, 3].map(num => (
-          <button 
-            key={num}
-            onClick={() => setAiCount(num)}
-            style={{ 
-              fontWeight: aiCount === num ? 'bold' : 'normal',
-              background: aiCount === num ? '#ffe792' : '#eee',
-              color: '#000',
-              padding: '0.5rem 1rem'
-            }}
-          >
-            {num} {num === 1 ? 'CPU' : 'CPUs'}
-          </button>
-        ))}
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 'var(--space-6)',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      {/* Background ambient light */}
+      <div style={{
+        position: 'absolute',
+        top: '-20%',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '80vw',
+        height: '80vw',
+        background: 'radial-gradient(circle, var(--surface-tint) 0%, transparent 60%)',
+        pointerEvents: 'none',
+      }} />
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 1 }}>
+        <h1 style={{
+          fontSize: '4rem',
+          lineHeight: 1.1,
+          textAlign: 'center',
+          color: 'var(--primary)',
+          marginBottom: 'var(--space-2)'
+        }}>
+          Flip 7
+        </h1>
+        <p style={{
+          fontSize: '1rem',
+          color: 'var(--on-surface-variant)',
+          textAlign: 'center',
+          maxWidth: '300px',
+          marginBottom: 'var(--space-20)'
+        }}>
+          The ultimate game of risk, reward, and pure luck.
+        </p>
       </div>
 
-      <h2>New Game vs CPU</h2>
-      <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column', maxWidth: 200 }}>
-        <button id="btn-easy" onClick={() => handleStart('easy')}>🟢 Easy</button>
-        <button id="btn-medium" onClick={() => handleStart('medium')}>🟡 Medium</button>
-        <button id="btn-hard" onClick={() => handleStart('hard')}>🔴 Hard</button>
+      <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', zIndex: 1 }}>
+        <Button onClick={() => navigate('/singleplayer')} style={{ width: '100%' }}>
+          Play Now
+        </Button>
+        <Button variant="tertiary" style={{ width: '100%' }}>
+          How to Play
+        </Button>
       </div>
     </div>
   );
