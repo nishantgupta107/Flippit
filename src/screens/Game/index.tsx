@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
@@ -91,7 +90,7 @@ export function Game() {
     );
   }
 
-  const { phase, players, activePlayerIndex, roundNumber, drawPile, discardPile, lastEvent, winner } = gameState;
+  const { phase, players, activePlayerIndex, roundNumber, drawPile, lastEvent, winner } = gameState;
   
   const humanIdx = players.findIndex((p) => !p.isAI);
   const humanPlayer = players[humanIdx];
@@ -103,7 +102,7 @@ export function Game() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      height: '100%',
       background: 'var(--surface)',
       color: 'var(--on-surface)',
       fontFamily: 'var(--font-body)',
@@ -148,6 +147,7 @@ export function Game() {
       {/* Main Play Area */}
       <main style={{ 
         flex: 1, 
+        minHeight: 0,
         padding: 'var(--space-4)', 
         display: 'flex', 
         flexDirection: 'column', 
@@ -169,18 +169,11 @@ export function Game() {
           </div>
         )}
 
-        {/* Center Table (Draw/Discard & Events) */}
+        {/* Center Table (Draw Deck & Events) */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-8)', margin: 'var(--space-4) 0' }}>
           <div style={{ position: 'relative' }}>
              <Card isFaceDown />
              <div style={{ position: 'absolute', bottom: -20, left: 0, right: 0, textAlign: 'center', fontSize: '0.75rem', color: 'var(--on-surface-variant)' }}>{drawPile.length} cards</div>
-          </div>
-          <div style={{ position: 'relative' }}>
-             {discardPile.length > 0 ? (
-               <Card card={discardPile[discardPile.length - 1]} />
-             ) : (
-               <div style={{ width: '80px', height: '112px', border: '1px dashed var(--outline-variant)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-surface-variant)' }}>Discard</div>
-             )}
           </div>
         </div>
 

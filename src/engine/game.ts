@@ -77,48 +77,55 @@ function resetPlayersForRound(state: GameState): GameState {
 export function startRound(state: GameState): GameState {
   let s = resetPlayersForRound(state);
 
-  // Deal one card to each player in clockwise order starting from dealer's left
-  const numPlayers = s.players.length;
-  const startIdx = (s.dealerIndex + 1) % numPlayers;
-
-  for (let i = 0; i < numPlayers; i++) {
-    const playerIdx = (startIdx + i) % numPlayers;
-    const player = s.players[playerIdx];
-
-    if (player.status !== 'active') continue; // already frozen from an action card
-
-    let card: Card;
-    [s, card] = drawCard(s);
-
-    if (card.type === 'number') {
-      // Add to hand (no bust during deal — first card can't be a duplicate)
-      const updatedPlayers = [...s.players];
-      updatedPlayers[playerIdx] = {
-        ...player,
-        numberCards: [...player.numberCards, card],
-      };
-      s = { ...s, players: updatedPlayers };
-    } else if (card.type === 'modifier') {
-      const updatedPlayers = [...s.players];
-      updatedPlayers[playerIdx] = {
-        ...player,
-        modifierCards: [...player.modifierCards, card],
-      };
-      s = { ...s, players: updatedPlayers };
-    } else if (card.type === 'action') {
-      // Resolve action card immediately during deal
-      s = resolveActionCard(s, card, player.id);
-    }
-  }
-
-  // Set first player to act (dealer's left)
+  // Set phase to deal, and first player to deal to is dealer's left
   s = {
     ...s,
-    phase: 'play',
-    activePlayerIndex: startIdx,
+    phase: 'deal',
+    activePlayerIndex: (s.dealerIndex + 1) % s.players.length,
     lastEvent: null,
   };
 
+  return s;
+}
+
+/**
+ * Deal exactly one card to the activePlayerIndex, then advance activePlayerIndex.
+ */
+function dealNextCard(state: GameState): GameState {
+  if (state.phase !== 'deal') return state;
+
+  let s = { ...state };
+  const playerIdx = s.activePlayerIndex;
+  const player = s.players[playerIdx];
+
+  // If player is inactive (e.g. frozen from another player's action card dealt earlier), we still count it as their deal turn, but they get no card.
+  if (player.status !== 'active') {
+    s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
+    return s;
+  }
+
+  let card: Card;
+  [s, card] = drawCard(s);
+
+  if (card.type === 'number') {
+    const updatedPlayers = [...s.players];
+    updatedPlayers[playerIdx] = {
+      ...player,
+      numberCards: [...player.numberCards, card],
+    };
+    s.players = updatedPlayers;
+  } else if (card.type === 'modifier') {
+    const updatedPlayers = [...s.players];
+    updatedPlayers[playerIdx] = {
+      ...player,
+      modifierCards: [...player.modifierCards, card],
+    };
+    s.players = updatedPlayers;
+  } else if (card.type === 'action') {
+    s = resolveActionCard(s, card, player.id);
+  }
+
+  s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
   return s;
 }
 
@@ -211,7 +218,7 @@ export function endRound(state: GameState, flip7WinnerId: string | null = null):
     allPlayerCards.push(...p.numberCards, ...p.modifierCards, ...p.actionCards);
   });
 
-  // Rotate dealer
+  // Rotate dealer (simple rotation for now)
   const newDealerIndex = (s.dealerIndex + 1) % s.players.length;
 
   return {
@@ -340,6 +347,6 @@ export function executeAITurn(state: GameState): GameState {
   return s;
 }
 
-// Re-export continueFlipThree for the store to use
-export { continueFlipThree, hitPlayer, stayPlayer, resolveActionCard as resolveAction };
+// Re-export continueFlipThree and dealNextCard for the store to use
+export { continueFlipThree, dealNextCard, hitPlayer, stayPlayer, resolveActionCard as resolveAction };
 export { checkFlip7 };

@@ -8,6 +8,7 @@ import {
   executeAITurn,
   continueFlipThree,
   nextTurn,
+  dealNextCard,
 } from '../engine/game';
 
 interface GameStore {
@@ -22,7 +23,7 @@ interface GameStore {
   resetGame: () => void;
 }
 
-const AI_DELAY_MS = () => 150 + Math.random() * 550; // 150–700ms
+const AI_DELAY_MS = () => 500 + Math.random() * 300; // 500–800ms
 
 export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
@@ -31,10 +32,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
     const initial = initGame(difficulty, aiCount);
     const afterDeal = startRound(initial);
-    set({ gameState: afterDeal, isAIThinking: false });
-
-    // If AI goes first (activePlayerIndex points to AI), trigger AI turn
-    scheduleAIIfNeeded(afterDeal, set, get);
+    performDealSequence(afterDeal, set, get);
   },
 
   hit: () => {
@@ -46,21 +44,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!humanPlayer || humanPlayer.status !== 'active') return;
     if (gameState.activePlayerIndex !== gameState.players.indexOf(humanPlayer)) return;
 
-    let newState = humanHit(gameState);
-
-    // Resolve any pending Flip Three that targets someone
-    newState = resolveFlipThreeIfPending(newState);
-
-    // If the active player is no longer active (e.g. self-Freeze or busted from own Flip Three)
-    if (newState.phase === 'play') {
-      const activePlayer = newState.players[newState.activePlayerIndex];
-      if (activePlayer && activePlayer.status !== 'active') {
-        newState = nextTurn(newState);
+    const newState = humanHit(gameState);
+    
+    // Process the hit result (might include a toast)
+    processGameStateUpdate(newState, set, get, () => {
+      // After processing the hit (and its possible Flip Three), check if Turn should advance
+      const currentState = get().gameState;
+      if (currentState && currentState.phase === 'play') {
+         const activePlayer = currentState.players[currentState.activePlayerIndex];
+         if (activePlayer && activePlayer.status !== 'active') {
+           const nextTurnState = nextTurn(currentState);
+           set({ gameState: nextTurnState });
+         }
       }
-    }
-
-    set({ gameState: newState });
-    scheduleAIIfNeeded(newState, set, get);
+      scheduleAIIfNeeded(get().gameState!, set, get);
+    });
   },
 
   stay: () => {
@@ -73,8 +71,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (gameState.activePlayerIndex !== gameState.players.indexOf(humanPlayer)) return;
 
     const newState = humanStay(gameState);
-    set({ gameState: newState });
-    scheduleAIIfNeeded(newState, set, get);
+    processGameStateUpdate(newState, set, get, () => {
+      scheduleAIIfNeeded(get().gameState!, set, get);
+    });
   },
 
   startNextRound: () => {
@@ -82,8 +81,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!gameState || gameState.phase !== 'round_end') return;
 
     const newState = startRound(gameState);
-    set({ gameState: newState, isAIThinking: false });
-    scheduleAIIfNeeded(newState, set, get);
+    performDealSequence(newState, set, get);
   },
 
   resetGame: () => {
@@ -115,34 +113,90 @@ function scheduleAIIfNeeded(
 
     let newState = executeAITurn(gameState);
 
-    // Resolve any Flip Three that the AI's action created
-    newState = resolveFlipThreeIfPending(newState);
-
-    // If the active player is no longer active (e.g. self-Freeze or busted from own Flip Three)
-    if (newState.phase === 'play') {
-      const activePlayer = newState.players[newState.activePlayerIndex];
-      if (activePlayer && activePlayer.status !== 'active') {
-        newState = nextTurn(newState);
+    processGameStateUpdate(newState, set, get, () => {
+      const currentState = get().gameState;
+      if (currentState && currentState.phase === 'play') {
+        const activePlayer = currentState.players[currentState.activePlayerIndex];
+        if (activePlayer && activePlayer.status !== 'active') {
+          const nextState = nextTurn(currentState);
+          set({ gameState: nextState });
+        }
       }
-    }
-
-    set({ gameState: newState, isAIThinking: false });
-
-    // Chain AI turns if AI goes again immediately
-    scheduleAIIfNeeded(newState, set, get);
+      set({ isAIThinking: false });
+      scheduleAIIfNeeded(get().gameState!, set, get);
+    });
   }, AI_DELAY_MS());
 }
 
 /**
- * Synchronously drain any pending Flip Three actions.
- * (The store resolves these instantly; animation happens in the UI layer.)
+ * Process a state update, handling any pending actions (like Flip Three) with delays.
  */
-function resolveFlipThreeIfPending(state: GameState): GameState {
-  let s = state;
-  while (s.pendingAction?.type === 'flip_three' && s.pendingAction.cardsRemaining > 0) {
-    s = continueFlipThree(s);
-    // Stop if the Flip Three ended due to bust or Flip 7
-    if (!s.pendingAction) break;
+function processGameStateUpdate(
+  state: GameState,
+  set: (partial: Partial<GameStore>) => void,
+  get: () => GameStore,
+  onComplete: () => void
+) {
+  set({ gameState: state });
+
+  // If there's an event or a pending action, we wait before proceeding
+  const hasEvent = !!state.lastEvent;
+  const hasPendingAction = !!state.pendingAction;
+
+  if (hasEvent || hasPendingAction) {
+    setTimeout(() => {
+      const currentState = get().gameState;
+      if (!currentState) return;
+
+      if (currentState.pendingAction?.type === 'flip_three' && currentState.pendingAction.cardsRemaining > 0) {
+        const nextState = continueFlipThree(currentState);
+        processGameStateUpdate(nextState, set, get, onComplete);
+      } else {
+        onComplete();
+      }
+    }, 500);
+  } else {
+    onComplete();
   }
-  return s;
+}
+
+
+
+/**
+ * Animate dealing cards one by one before starting logic
+ */
+function performDealSequence(
+  startState: GameState,
+  set: (partial: Partial<GameStore>) => void,
+  get: () => GameStore
+) {
+  set({ gameState: startState, isAIThinking: true });
+  let dealt = 0;
+  
+  function nextDealStep() {
+    let state = get().gameState;
+    if (!state || state.phase !== 'deal') return;
+    
+    // Check if we finished
+    if (dealt >= state.players.length) {
+       let finalState = { 
+         ...state, 
+         phase: 'play' as const, 
+         activePlayerIndex: (state.dealerIndex + 1) % state.players.length,
+         lastEvent: null 
+       };
+       set({ gameState: finalState, isAIThinking: false });
+       scheduleAIIfNeeded(finalState, set, get);
+       return;
+    }
+    
+    let nextState = dealNextCard(state);
+    
+    processGameStateUpdate(nextState, set, get, () => {
+      dealt++;
+      nextDealStep();
+    });
+  }
+  
+  nextDealStep();
 }
