@@ -109,12 +109,14 @@ function dealNextCard(state: GameState): GameState {
   [s, card] = drawCard(s);
   
   logGameEvent('CARD_DEALT', { playerId: player.id, cardType: card.type, cardValue: card.value || card.modifier || card.action }, s, player.id);
+  
+  s.lastEvent = { kind: 'card_drawn', playerId: player.id, card };
 
   if (card.type === 'number') {
     const updatedPlayers = [...s.players];
     updatedPlayers[playerIdx] = {
       ...player,
-      numberCards: [...player.numberCards, card],
+      numberCards: [...player.numberCards, card].sort((a, b) => (a.value ?? 0) - (b.value ?? 0)),
     };
     s.players = updatedPlayers;
   } else if (card.type === 'modifier') {

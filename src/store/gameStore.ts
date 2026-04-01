@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GameState, Difficulty } from '../engine/types';
+import type { GameState, Difficulty, Card } from '../engine/types';
 import {
   initGame,
   startRound,
@@ -15,6 +15,7 @@ import { logUserAction, logGameEvent, logAIEvent } from '../utils/eventLogger';
 interface GameStore {
   gameState: GameState | null;
   isAIThinking: boolean;
+  pendingCardPlacement: Card | null;
 
   // Actions
   startGame: (difficulty?: Difficulty, aiCount?: number) => void;
@@ -29,6 +30,7 @@ const AI_DELAY_MS = () => 500 + Math.random() * 300; // 500–800ms
 export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
   isAIThinking: false,
+  pendingCardPlacement: null,
 
   startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
     logUserAction('START_GAME_CLICKED', { difficulty, aiCount });
@@ -96,7 +98,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetGame: () => {
     logUserAction('RESET_GAME_CLICKED');
     logGameEvent('GAME_RESET');
-    set({ gameState: null, isAIThinking: false });
+    set({ gameState: null, isAIThinking: false, pendingCardPlacement: null });
   },
 }));
 
@@ -149,16 +151,34 @@ function scheduleAIIfNeeded(
   }, AI_DELAY_MS());
 }
 
-/**
- * Process a state update, handling any pending actions (like Flip Three) with delays.
- */
 function processGameStateUpdate(
   state: GameState,
   set: (partial: Partial<GameStore>) => void,
   get: () => GameStore,
   onComplete: () => void
 ) {
-  set({ gameState: state });
+  const evt = state.lastEvent;
+  // If there is an event with a card drawn, hold it in pendingCardPlacement
+  const isDrawnCard = evt && (evt.kind === 'card_drawn' || evt.kind === 'flip_seven' || evt.kind === 'bust' || evt.kind === 'second_chance_used') && evt.card;
+
+  if (isDrawnCard && evt.card) {
+    set({ gameState: state, pendingCardPlacement: evt.card });
+    setTimeout(() => {
+      set({ pendingCardPlacement: null });
+      const currentState = get().gameState;
+      if (!currentState) { onComplete(); return; }
+
+      if (currentState.pendingAction?.type === 'flip_three' && currentState.pendingAction.cardsRemaining > 0) {
+        const nextState = continueFlipThree(currentState);
+        processGameStateUpdate(nextState, set, get, onComplete);
+      } else {
+        onComplete();
+      }
+    }, 1500);
+    return;
+  }
+
+  set({ gameState: state, pendingCardPlacement: null });
 
   // If there's an event or a pending action, we wait before proceeding
   const hasEvent = !!state.lastEvent;

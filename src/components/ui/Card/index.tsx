@@ -1,6 +1,6 @@
 // Removed unused React import
 import { motion } from 'framer-motion';
-import type { Card as CardType } from '../../../engine/types';
+import type { Card as CardType, PlayerState as PlayerType } from '../../../engine/types';
 
 interface CardProps {
   card?: CardType;
@@ -8,41 +8,35 @@ interface CardProps {
   onClick?: () => void;
   style?: React.CSSProperties;
   className?: string;
+  status?: PlayerType['status'];
 }
 
-export function Card({ card, isFaceDown, onClick, style, className = '' }: CardProps) {
+export function Card({ card, isFaceDown, onClick, style, className = '', status }: CardProps) {
   // Dimensions and base styling
   const baseStyle: React.CSSProperties = {
     width: 'var(--card-width, 80px)',
     aspectRatio: '5 / 7',
-    borderRadius: 'var(--radius-md)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: 'var(--shadow-float)',
     cursor: onClick ? 'pointer' : 'default',
     position: 'relative',
-    overflow: 'hidden',
     userSelect: 'none',
-    border: '1px solid var(--outline-variant)',
+    perspective: 1000,
     ...style,
   };
 
-  if (isFaceDown || !card) {
-    return (
-      <motion.div
-        className={className}
-        style={{
-          ...baseStyle,
-          background: 'var(--surface-bright)',
-          border: '1px solid var(--outline-variant)',
-        }}
-        onClick={onClick}
-        whileHover={onClick ? { y: -5 } : {}}
-      >
-        {/* Card back design: subtle pattern or logo */}
-        <div style={{
+  const backSideContent = (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--surface-bright)',
+        border: '1px solid var(--outline-variant)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div style={{
           width: '60%',
           height: '60%',
           borderRadius: '50%',
@@ -50,8 +44,23 @@ export function Card({ card, isFaceDown, onClick, style, className = '' }: CardP
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-        }}>
-          <span style={{ fontFamily: 'var(--font-display)', color: 'var(--surface-variant)', fontSize: '1.5rem', fontWeight: 700 }}>F7</span>
+      }}>
+        <span style={{ fontFamily: 'var(--font-display)', color: 'var(--surface-variant)', fontSize: '1.5rem', fontWeight: 700 }}>F7</span>
+      </div>
+    </div>
+  );
+
+  if (!card) {
+    return (
+      <motion.div
+        className={className}
+        style={baseStyle}
+        onClick={onClick}
+        whileHover={onClick ? { y: -5 } : {}}
+        layout
+      >
+        <div style={{ width: '100%', height: '100%' }}>
+           {backSideContent}
         </div>
       </motion.div>
     );
@@ -60,6 +69,10 @@ export function Card({ card, isFaceDown, onClick, style, className = '' }: CardP
   // Face-up content styles based on type
   let content = null;
   let bg = 'var(--surface-container-highest)';
+  const isBusted = status === 'busted';
+  const isFrozen = status === 'frozen';
+  
+  const faceFilter = isBusted ? 'sepia(1) hue-rotate(-50deg) saturate(5)' : isFrozen ? 'sepia(1) hue-rotate(180deg) saturate(3)' : undefined;
   
   if (card.type === 'number') {
     content = (
@@ -68,7 +81,7 @@ export function Card({ card, isFaceDown, onClick, style, className = '' }: CardP
           fontFamily: 'var(--font-display)', 
           fontSize: '2.5rem', 
           fontWeight: 700, 
-          color: 'var(--primary)',
+          color: isBusted ? 'var(--error)' : 'var(--primary)',
           lineHeight: 1
         }}>
           {card.value}
@@ -124,40 +137,89 @@ export function Card({ card, isFaceDown, onClick, style, className = '' }: CardP
   return (
     <motion.div
       className={className}
-      style={{
-        ...baseStyle,
-        background: bg,
-      }}
+      style={baseStyle}
       onClick={onClick}
       whileHover={onClick ? { y: -5 } : { y: 0 }}
       layout
+      initial={{ scale: 0.5, opacity: 0 }}
+      animate={{ 
+        scale: 1, 
+        opacity: 1,
+        boxShadow: isBusted ? '0 0 15px var(--error)' : 'var(--shadow-float)'
+      }}
+      transition={{ type: 'spring', stiffness: 260, damping: 20 }}
     >
-      {/* Corner index (top left) */}
-      <div style={{
-        position: 'absolute',
-        top: '4px',
-        left: '6px',
-        fontFamily: 'var(--font-display)',
-        fontSize: '0.75rem',
-        fontWeight: 700,
-        color: card.type === 'number' ? 'var(--primary)' : 
-               card.type === 'action' ? 'var(--secondary)' : 'var(--tertiary)'
-      }}>
-        {card.type === 'number' ? card.value : ''}
-      </div>
+      <motion.div
+        initial={{ rotateY: 180 }}
+        animate={{ rotateY: isFaceDown ? 180 : 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+          transformStyle: 'preserve-3d',
+        }}
+      >
+        {/* FRONT SIDE */}
+        <motion.div 
+          animate={{ filter: faceFilter || 'none' }}
+          transition={{ duration: 0.5 }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: bg,
+            borderRadius: 'var(--radius-md)',
+            border: isBusted ? '2px solid var(--error)' : '1px solid var(--outline-variant)',
+            backfaceVisibility: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+            zIndex: isFaceDown ? 0 : 1
+          }}
+        >
+          {/* Corner index (top left) */}
+          <div style={{
+            position: 'absolute',
+            top: '4px',
+            left: '6px',
+            fontFamily: 'var(--font-display)',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            color: card.type === 'number' ? (isBusted ? 'var(--error)' : 'var(--primary)') : 
+                   card.type === 'action' ? 'var(--secondary)' : 'var(--tertiary)'
+          }}>
+            {card.type === 'number' ? card.value : ''}
+          </div>
 
-      {content}
+          {content}
 
-      {/* Subtle bottom fade/gradient */}
-      <div style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '30%',
-        background: 'linear-gradient(to top, rgba(0,0,0,0.5), transparent)',
-        pointerEvents: 'none',
-      }} />
+          {/* Subtle bottom fade/gradient */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '30%',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.5), transparent)',
+            pointerEvents: 'none',
+          }} />
+        </motion.div>
+        
+        {/* BACK SIDE */}
+        <div style={{
+           position: 'absolute',
+           inset: 0,
+           backfaceVisibility: 'hidden',
+           WebkitBackfaceVisibility: 'hidden',
+           transform: 'rotateY(180deg)',
+           zIndex: isFaceDown ? 1 : 0
+        }}>
+           {backSideContent}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

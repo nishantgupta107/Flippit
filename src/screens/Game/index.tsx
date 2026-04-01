@@ -2,16 +2,17 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
 import { calculateRoundScore } from '../../engine/scoring';
-import type { PlayerState } from '../../engine/types';
+import type { PlayerState, Card as CardType } from '../../engine/types';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { ScoreHUD } from '../../components/ui/ScoreHUD';
 import { Chip } from '../../components/ui/Chip';
 import { DebugDumpButton } from '../../components/DebugDumpButton';
 
+
 // ─── Player Hand View ─────────────────────────────────────────────────────────
 
-function PlayerHand({ player, isActive }: { player: PlayerState; isActive: boolean }) {
+function PlayerHand({ player, isActive, pendingCardPlacement }: { player: PlayerState; isActive: boolean; pendingCardPlacement?: CardType | null }) {
   const roundScore = calculateRoundScore(player);
   
   const statusEmoji =
@@ -19,20 +20,51 @@ function PlayerHand({ player, isActive }: { player: PlayerState; isActive: boole
     player.status === 'stayed' ? '🏦' :
     player.status === 'busted' ? '💥' : '❄️';
 
+  const isFlip7 = new Set(player.numberCards.map(c => c.value)).size >= 7;
+
   return (
-    <div style={{
-      background: isActive ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
-      borderRadius: 'var(--radius-lg)',
-      padding: 'var(--space-4)',
-      border: isActive ? '2px solid var(--primary)' : '1px solid transparent',
-      transition: 'all 0.3s ease',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'var(--space-3)',
-      width: '100%',
-    }}>
+    <motion.div 
+      animate={
+        player.status === 'busted' ? { x: [-10, 10, -10, 10, 0], opacity: 0.6 } :
+        isFlip7 ? { scale: [1, 1.05, 1], boxShadow: ['0 0 0px var(--primary)', '0 0 30px var(--primary)', '0 0 10px var(--primary)'] } :
+        { opacity: 1, x: 0, scale: 1 }
+      }
+      transition={{ duration: 0.5 }}
+      style={{
+        background: isActive ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
+        borderRadius: 'var(--radius-lg)',
+        padding: 'var(--space-4)',
+        border: isActive ? '2px solid var(--primary)' : '1px solid transparent',
+        transition: 'background 0.3s ease, border 0.3s ease',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-3)',
+        width: '100%',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Freeze Overlay */}
+      <AnimatePresence>
+        {player.status === 'frozen' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(104, 211, 255, 0.1)',
+              backdropFilter: 'blur(2px)',
+              zIndex: 10,
+              pointerEvents: 'none'
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 11 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <span style={{ fontSize: '1.25rem' }}>{statusEmoji}</span>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{player.name}</span>
@@ -42,7 +74,7 @@ function PlayerHand({ player, isActive }: { player: PlayerState; isActive: boole
       </div>
 
       {/* Cards Area */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minHeight: '120px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minHeight: '120px', zIndex: 11 }}>
         {/* Modifiers & Actions */}
         {(player.modifierCards.length > 0 || player.actionCards.length > 0) && (
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
@@ -56,22 +88,81 @@ function PlayerHand({ player, isActive }: { player: PlayerState; isActive: boole
         )}
 
         {/* Number Cards Row (Overlapping) */}
-        <div style={{ display: 'flex', flexWrap: 'nowrap', position: 'relative', height: '112px' }}>
+        <div style={{ display: 'flex', width: '100%', height: '112px' }}>
           {player.numberCards.length === 0 ? (
             <div style={{ color: 'var(--on-surface-variant)', fontSize: '0.875rem', marginTop: 'var(--space-4)' }}>No cards drawn.</div>
           ) : (
-            player.numberCards.map((c, i) => (
-              <div key={c.id} style={{ 
-                position: i === 0 ? 'relative' : 'absolute',
-                left: i === 0 ? 0 : `${i * 35}px`,
-                zIndex: i,
-              }}>
-                <Card card={c} />
-              </div>
-            ))
+            player.numberCards.map((c, i, arr) => {
+              const N = arr.length;
+              const overlapSpace = N > 1 ? `calc((100% - ${N * 80}px) / ${N - 1})` : '0px';
+              const isPending = c.id === pendingCardPlacement?.id;
+              
+              return (
+              <motion.div 
+                key={c.id}
+                layoutId={c.id}
+                layout
+                initial={false}
+                animate={{ 
+                  opacity: isPending ? 0 : 1, 
+                  rotateZ: player.status === 'frozen' ? 90 : 0
+                }}
+                transition={{ 
+                  type: 'spring', bounce: 0, duration: 0.5,
+                  rotateZ: { type: 'spring', delay: player.status === 'frozen' ? i * 0.3 : 0 }
+                }}
+                style={{ 
+                  marginLeft: i === 0 ? '0px' : `min(0.5rem, ${overlapSpace})`,
+                  zIndex: i,
+                  transformOrigin: 'bottom left',
+                  borderRadius: 'var(--radius-md)',
+                  flexShrink: 0
+                }}
+              >
+                <Card card={c} status={player.status === 'active' ? undefined : player.status} />
+              </motion.div>
+            )})
           )}
         </div>
       </div>
+    </motion.div>
+  );
+}
+
+// ─── Flip 7 Celebration ────────────────────────────────────────────────────────
+
+function Flip7Celebration() {
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1000, overflow: 'hidden' }}>
+      {Array.from({ length: 30 }).map((_, i) => (
+        <motion.div
+          key={i}
+          initial={{ 
+            opacity: 1, 
+            y: -20, 
+            x: Math.random() * window.innerWidth,
+            rotate: 0,
+            scale: Math.random() * 0.5 + 0.5
+          }}
+          animate={{ 
+            y: window.innerHeight + 20,
+            rotate: 360,
+            x: `calc(${Math.random() * 100}vw - 50vw)` // drift
+          }}
+          transition={{ 
+            duration: Math.random() * 2 + 2,
+            repeat: Infinity,
+            ease: "linear",
+            delay: Math.random() * 2
+          }}
+          style={{
+            position: 'absolute',
+            width: 15, height: 15,
+            background: ['var(--primary)', 'var(--secondary)', 'var(--tertiary)'][Math.floor(Math.random() * 3)],
+            borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+          }}
+        />
+      ))}
     </div>
   );
 }
@@ -80,7 +171,7 @@ function PlayerHand({ player, isActive }: { player: PlayerState; isActive: boole
 
 export function Game() {
   const navigate = useNavigate();
-  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame } = useGameStore();
+  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame, pendingCardPlacement } = useGameStore();
 
   if (!gameState) {
     return (
@@ -100,6 +191,7 @@ export function Game() {
 
   // Separate AI from Human
   const aiPlayers = players.filter(p => p.isAI);
+  const hasFlip7 = players.some(p => new Set(p.numberCards.map(c => c.value)).size >= 7);
 
   return (
     <div style={{
@@ -125,6 +217,8 @@ export function Game() {
         zIndex: 0,
       }} />
 
+      {hasFlip7 && <Flip7Celebration />}
+
       {/* Top Bar */}
       <header style={{ 
         padding: 'var(--space-4)', 
@@ -138,7 +232,7 @@ export function Game() {
         <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center' }}>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--primary)' }}>Round {roundNumber}</span>
           <button onClick={() => { resetGame(); navigate('/'); }} style={{
-            background: 'transparent', border: 'none', color: 'var(--on-surface-variant)', fontSize: '1rem'
+            background: 'transparent', border: 'none', color: 'var(--on-surface-variant)', fontSize: '1rem', cursor: 'pointer'
           }}>
             Quit
           </button>
@@ -165,16 +259,45 @@ export function Game() {
                 key={ai.id} 
                 player={ai} 
                 isActive={players[activePlayerIndex]?.id === ai.id && phase === 'play'} 
+                pendingCardPlacement={pendingCardPlacement}
               />
             ))}
           </div>
         )}
 
         {/* Center Table (Draw Deck & Events) */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-8)', margin: 'var(--space-4) 0' }}>
-          <div style={{ position: 'relative' }}>
-             <Card isFaceDown />
-             <div style={{ position: 'absolute', bottom: -20, left: 0, right: 0, textAlign: 'center', fontSize: '0.75rem', color: 'var(--on-surface-variant)' }}>{drawPile.length} cards</div>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: 'var(--space-4) 0', minHeight: '140px' }}>
+          {/* Deck permanently offset to the left */}
+          <div style={{ position: 'relative', width: '80px', height: '112px', marginRight: '60px' }}>
+             {drawPile.length > 0 && Array.from({ length: Math.min(5, Math.max(1, Math.ceil(drawPile.length / 10))) }).map((_, i) => (
+                <div key={i} style={{ position: 'absolute', top: -i * 2, left: -i * 2, zIndex: i }}>
+                   <Card isFaceDown />
+                </div>
+             ))}
+             {drawPile.length === 0 && (
+                <div style={{ width: '100%', height: '100%', border: '2px dashed var(--outline)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-surface-variant)' }}>Empty</div>
+             )}
+             
+             <div style={{ position: 'absolute', bottom: -24, left: -20, right: -20, textAlign: 'center', fontSize: '0.75rem', color: 'var(--on-surface-variant)', fontWeight: 600 }}>
+                 {drawPile.length} CARDS
+             </div>
+
+             {pendingCardPlacement && (
+               <motion.div
+                 layoutId={pendingCardPlacement.id}
+                 initial={false}
+                 animate={{ opacity: 1, scale: 1, x: 100 }}
+                 transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+                 style={{
+                   position: 'absolute',
+                   top: 0,
+                   left: 0,
+                   zIndex: 20
+                 }}
+               >
+                 <Card card={pendingCardPlacement} />
+               </motion.div>
+             )}
           </div>
         </div>
 
@@ -182,9 +305,10 @@ export function Game() {
         <AnimatePresence>
           {lastEvent && lastEvent.kind !== 'round_end' && lastEvent.kind !== 'game_over' && (
             <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+              transition={{ type: 'spring', damping: 20 }}
               style={{
                 background: 'var(--surface-variant)',
                 backdropFilter: 'blur(10px)',
@@ -193,10 +317,11 @@ export function Game() {
                 alignSelf: 'center',
                 textAlign: 'center',
                 border: '1px solid var(--outline-variant)',
-                fontSize: '0.875rem'
+                fontSize: '0.875rem',
+                boxShadow: 'var(--shadow-float)'
               }}
             >
-              <strong style={{ color: 'var(--primary)' }}>{players.find((p) => p.id === lastEvent.playerId)?.name}:</strong> {lastEvent.message || lastEvent.kind.replace('_', ' ')}
+              <strong style={{ color: 'var(--primary)' }}>{players.find((p) => p.id === lastEvent.playerId)?.name}:</strong> {lastEvent.message || (lastEvent.kind === 'card_drawn' ? `Drew ${lastEvent.card?.value || lastEvent.card?.action || lastEvent.card?.modifier}` : lastEvent.kind.replace('_', ' '))}
             </motion.div>
           )}
         </AnimatePresence>
@@ -211,6 +336,7 @@ export function Game() {
             <PlayerHand 
               player={humanPlayer} 
               isActive={players[activePlayerIndex]?.id === humanPlayer.id && phase === 'play'} 
+              pendingCardPlacement={pendingCardPlacement}
             />
           </div>
         )}
@@ -262,7 +388,10 @@ export function Game() {
               padding: 'var(--space-6)'
             }}
           >
-            <div style={{
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              style={{
               background: 'var(--surface-container-high)',
               border: '1px solid var(--outline-variant)',
               borderRadius: 'var(--radius-xl)',
@@ -299,7 +428,7 @@ export function Game() {
               ) : (
                 <Button onClick={() => { resetGame(); navigate('/'); }}>Play Again</Button>
               )}
-            </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

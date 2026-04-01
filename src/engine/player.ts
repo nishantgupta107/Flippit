@@ -113,38 +113,29 @@ function handleNumberCard(
       return result;
     }
 
-    // Bust! Player scores 0 for the round. All their cards go to discard.
+    // Bust! Player scores 0 for the round.
     const bustedPlayer: PlayerState = {
       ...player,
       status: 'busted',
       roundScore: 0,
-      numberCards: [],
-      modifierCards: [],
-      actionCards: [],
+      numberCards: [...player.numberCards, card].sort((a, b) => (a.value ?? 0) - (b.value ?? 0)),
     };
-    const allPlayerCards = [
-      ...player.numberCards,
-      ...player.modifierCards,
-      ...player.actionCards,
-      card, // the duplicate that caused the bust
-    ];
     const updatedPlayers = [...state.players];
     updatedPlayers[playerIndex] = bustedPlayer;
     
     const bustResult: GameState = {
       ...state,
       players: updatedPlayers,
-      discardPile: [...state.discardPile, ...allPlayerCards],
       lastEvent: { kind: 'bust', playerId: player.id, card },
     };
-    logGameEvent('PLAYER_BUSTED', { playerId: player.id, duplicateValue: card.value, cardCountDiscarded: allPlayerCards.length }, bustResult, player.id);
+    logGameEvent('PLAYER_BUSTED', { playerId: player.id, duplicateValue: card.value, cardCountDiscarded: bustedPlayer.numberCards.length + bustedPlayer.actionCards.length + bustedPlayer.modifierCards.length }, bustResult, player.id);
     return bustResult;
   }
 
   // Normal number card: add to row
   const updatedPlayer: PlayerState = {
     ...player,
-    numberCards: [...player.numberCards, card],
+    numberCards: [...player.numberCards, card].sort((a, b) => (a.value ?? 0) - (b.value ?? 0)),
   };
 
   // Check Flip 7
