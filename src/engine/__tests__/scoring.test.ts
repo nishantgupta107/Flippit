@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateRoundScore, checkFlip7, applyRoundScores, checkWinCondition, WIN_SCORE } from '../scoring';
+import { calculateRoundScore, checkFlip7, applyRoundScores, checkWinCondition } from '../scoring';
 import type { PlayerState, GameState } from '../types';
 
 function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {

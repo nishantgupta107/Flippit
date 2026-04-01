@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GameState, Difficulty, Card } from '../engine/types';
+import type { GameState, Difficulty } from '../engine/types';
 import {
   initGame,
   startRound,
@@ -11,11 +11,17 @@ import {
   dealNextCard,
 } from '../engine/game';
 import { logUserAction, logGameEvent, logAIEvent } from '../utils/eventLogger';
+import {
+  getPendingDrawAnimation,
+  runPendingDrawAnimation,
+  waitForNonCardEvent,
+} from './drawAnimation';
+import type { PendingDrawAnimation } from './drawAnimation';
 
 interface GameStore {
   gameState: GameState | null;
   isAIThinking: boolean;
-  pendingCardPlacement: Card | null;
+  pendingDrawAnimation: PendingDrawAnimation | null;
 
   // Actions
   startGame: (difficulty?: Difficulty, aiCount?: number) => void;
@@ -30,7 +36,7 @@ const AI_DELAY_MS = () => 500 + Math.random() * 300; // 500–800ms
 export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
   isAIThinking: false,
-  pendingCardPlacement: null,
+  pendingDrawAnimation: null,
 
   startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
     logUserAction('START_GAME_CLICKED', { difficulty, aiCount });
@@ -98,7 +104,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetGame: () => {
     logUserAction('RESET_GAME_CLICKED');
     logGameEvent('GAME_RESET');
-    set({ gameState: null, isAIThinking: false, pendingCardPlacement: null });
+    set({ gameState: null, isAIThinking: false, pendingDrawAnimation: null });
   },
 }));
 
@@ -157,35 +163,52 @@ function processGameStateUpdate(
   get: () => GameStore,
   onComplete: () => void
 ) {
-  const evt = state.lastEvent;
-  // If there is an event with a card drawn, hold it in pendingCardPlacement
-  const isDrawnCard = evt && (evt.kind === 'card_drawn' || evt.kind === 'flip_seven' || evt.kind === 'bust' || evt.kind === 'second_chance_used') && evt.card;
+  const pendingDrawAnimation = getPendingDrawAnimation(state);
 
-  if (isDrawnCard && evt.card) {
-    set({ gameState: state, pendingCardPlacement: evt.card });
-    setTimeout(() => {
-      set({ pendingCardPlacement: null });
-      const currentState = get().gameState;
-      if (!currentState) { onComplete(); return; }
+  if (pendingDrawAnimation) {
+    set({ gameState: state, pendingDrawAnimation });
 
-      if (currentState.pendingAction?.type === 'flip_three' && currentState.pendingAction.cardsRemaining > 0) {
-        const nextState = continueFlipThree(currentState);
-        processGameStateUpdate(nextState, set, get, onComplete);
-      } else {
+    const pendingCardId = pendingDrawAnimation.card.id;
+    const setPendingDrawAnimationIfCurrent = (nextAnimation: PendingDrawAnimation | null) => {
+      const currentAnimation = get().pendingDrawAnimation;
+      if (currentAnimation?.card.id !== pendingCardId) {
+        return;
+      }
+
+      set({ pendingDrawAnimation: nextAnimation });
+    };
+
+    runPendingDrawAnimation(
+      pendingDrawAnimation,
+      setPendingDrawAnimationIfCurrent,
+      () => {
+        const currentState = get().gameState;
+        if (!currentState) {
+          onComplete();
+          return;
+        }
+
+        if (currentState.pendingAction?.type === 'flip_three' && currentState.pendingAction.cardsRemaining > 0) {
+          const nextState = continueFlipThree(currentState);
+          processGameStateUpdate(nextState, set, get, onComplete);
+          return;
+        }
+
         onComplete();
       }
-    }, 1500);
+    );
+
     return;
   }
 
-  set({ gameState: state, pendingCardPlacement: null });
+  set({ gameState: state, pendingDrawAnimation: null });
 
   // If there's an event or a pending action, we wait before proceeding
   const hasEvent = !!state.lastEvent;
   const hasPendingAction = !!state.pendingAction;
 
   if (hasEvent || hasPendingAction) {
-    setTimeout(() => {
+    waitForNonCardEvent(() => {
       const currentState = get().gameState;
       if (!currentState) return;
 
@@ -195,7 +218,7 @@ function processGameStateUpdate(
       } else {
         onComplete();
       }
-    }, 500);
+    });
   } else {
     onComplete();
   }

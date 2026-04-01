@@ -1,19 +1,78 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
 import { calculateRoundScore } from '../../engine/scoring';
-import type { PlayerState, Card as CardType } from '../../engine/types';
+import type { PlayerState } from '../../engine/types';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { ScoreHUD } from '../../components/ui/ScoreHUD';
 import { Chip } from '../../components/ui/Chip';
 import { DebugDumpButton } from '../../components/DebugDumpButton';
+import type { PendingDrawAnimation } from '../../store/drawAnimation';
 
+const CARD_WIDTH = 80;
+const CARD_HEIGHT = 112;
+const MAX_CARD_SPACING = 8;
+
+interface FloatingCardPosition {
+  x: number;
+  y: number;
+}
+
+interface FloatingCardMetrics {
+  source: FloatingCardPosition;
+  destination: FloatingCardPosition;
+}
+
+function getCardSpacing(containerWidth: number, totalCards: number): number {
+  if (totalCards <= 1) {
+    return 0;
+  }
+
+  return Math.min(MAX_CARD_SPACING, (containerWidth - totalCards * CARD_WIDTH) / (totalCards - 1));
+}
 
 // ─── Player Hand View ─────────────────────────────────────────────────────────
 
-function PlayerHand({ player, isActive, pendingCardPlacement }: { player: PlayerState; isActive: boolean; pendingCardPlacement?: CardType | null }) {
+function PlayerHand({
+  player,
+  isActive,
+  pendingDrawAnimation,
+  numberRowRef,
+  cardsAreaRef,
+  incomingSlotRef,
+}: {
+  player: PlayerState;
+  isActive: boolean;
+  pendingDrawAnimation?: PendingDrawAnimation | null;
+  numberRowRef?: (node: HTMLDivElement | null) => void;
+  cardsAreaRef?: (node: HTMLDivElement | null) => void;
+  incomingSlotRef?: (node: HTMLDivElement | null) => void;
+}) {
   const roundScore = calculateRoundScore(player);
+  const shouldOmitPendingCard = pendingDrawAnimation?.playerId === player.id;
+  const displayedNumberCards = shouldOmitPendingCard
+    ? player.numberCards.filter((card) => card.id !== pendingDrawAnimation.card.id)
+    : player.numberCards;
+  const pendingNumberCardIndex =
+    pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.card.type === 'number'
+      ? player.numberCards.findIndex((card) => card.id === pendingDrawAnimation.card.id)
+      : -1;
+  const renderNumberCards =
+    pendingDrawAnimation?.phase === 'travel' && pendingNumberCardIndex !== -1
+      ? [
+          ...displayedNumberCards.slice(0, pendingNumberCardIndex),
+          null,
+          ...displayedNumberCards.slice(pendingNumberCardIndex),
+        ]
+      : displayedNumberCards;
+  const displayedModifierCards = shouldOmitPendingCard
+    ? player.modifierCards.filter((card) => card.id !== pendingDrawAnimation.card.id)
+    : player.modifierCards;
+  const displayedActionCards = shouldOmitPendingCard
+    ? player.actionCards.filter((card) => card.id !== pendingDrawAnimation.card.id)
+    : player.actionCards;
   
   const statusEmoji =
     player.status === 'active' ? '🟢' :
@@ -74,41 +133,59 @@ function PlayerHand({ player, isActive, pendingCardPlacement }: { player: Player
       </div>
 
       {/* Cards Area */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minHeight: '120px', zIndex: 11 }}>
+      <div
+        ref={cardsAreaRef}
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minHeight: '120px', zIndex: 11 }}
+      >
         {/* Modifiers & Actions */}
-        {(player.modifierCards.length > 0 || player.actionCards.length > 0) && (
+        {(displayedModifierCards.length > 0 || displayedActionCards.length > 0) && (
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            {player.modifierCards.map((c) => (
+            {displayedModifierCards.map((c) => (
                <Chip key={c.id} label={c.modifier!} variant="multiplier" />
             ))}
-            {player.actionCards.map((c) => (
+            {displayedActionCards.map((c) => (
                <Chip key={c.id} label={c.action!} variant="action" />
             ))}
           </div>
         )}
 
         {/* Number Cards Row (Overlapping) */}
-        <div style={{ display: 'flex', width: '100%', height: '112px' }}>
-          {player.numberCards.length === 0 ? (
+        <div ref={numberRowRef} style={{ display: 'flex', width: '100%', height: '112px' }}>
+          {renderNumberCards.length === 0 ? (
             <div style={{ color: 'var(--on-surface-variant)', fontSize: '0.875rem', marginTop: 'var(--space-4)' }}>No cards drawn.</div>
           ) : (
-            player.numberCards.map((c, i, arr) => {
+            renderNumberCards.map((c, i, arr) => {
               const N = arr.length;
               const overlapSpace = N > 1 ? `calc((100% - ${N * 80}px) / ${N - 1})` : '0px';
-              const isPending = c.id === pendingCardPlacement?.id;
+
+              if (!c) {
+                return (
+                  <div
+                    key={`incoming-slot-${player.id}-${pendingDrawAnimation?.card.id ?? i}`}
+                    ref={incomingSlotRef}
+                    style={{
+                      marginLeft: i === 0 ? '0px' : `min(0.5rem, ${overlapSpace})`,
+                      width: `${CARD_WIDTH}px`,
+                      height: `${CARD_HEIGHT}px`,
+                      flexShrink: 0,
+                      opacity: 0,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                );
+              }
               
               return (
               <motion.div 
                 key={c.id}
-                layoutId={c.id}
                 layout
                 initial={false}
                 animate={{ 
-                  opacity: isPending ? 0 : 1, 
+                  opacity: 1,
                   rotateZ: player.status === 'frozen' ? 90 : 0
                 }}
                 transition={{ 
-                  type: 'spring', bounce: 0, duration: 0.5,
+                  type: 'spring', stiffness: 260, damping: 16, mass: 0.85,
                   rotateZ: { type: 'spring', delay: player.status === 'frozen' ? i * 0.3 : 0 }
                 }}
                 style={{ 
@@ -119,7 +196,11 @@ function PlayerHand({ player, isActive, pendingCardPlacement }: { player: Player
                   flexShrink: 0
                 }}
               >
-                <Card card={c} status={player.status === 'active' ? undefined : player.status} />
+                <Card
+                  card={c}
+                  status={player.status === 'active' ? undefined : player.status}
+                  disableIntroAnimation
+                />
               </motion.div>
             )})
           )}
@@ -171,7 +252,67 @@ function Flip7Celebration() {
 
 export function Game() {
   const navigate = useNavigate();
-  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame, pendingCardPlacement } = useGameStore();
+  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame, pendingDrawAnimation } = useGameStore();
+  const deckFlipAnchorRef = useRef<HTMLDivElement | null>(null);
+  const numberRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const cardsAreaRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const incomingSlotRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [floatingCardMetrics, setFloatingCardMetrics] = useState<FloatingCardMetrics | null>(null);
+
+  useLayoutEffect(() => {
+    if (!gameState || !pendingDrawAnimation) {
+      setFloatingCardMetrics(null);
+      return;
+    }
+
+    const deckRect = deckFlipAnchorRef.current?.getBoundingClientRect();
+    if (!deckRect) {
+      return;
+    }
+
+    const targetPlayer = gameState.players.find((player) => player.id === pendingDrawAnimation.playerId);
+    if (!targetPlayer) {
+      return;
+    }
+
+    const source = {
+      x: deckRect.left,
+      y: deckRect.top,
+    };
+
+    let destination = source;
+
+    if (pendingDrawAnimation.card.type === 'number') {
+      const incomingSlotRect = incomingSlotRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
+      if (incomingSlotRect) {
+        destination = {
+          x: incomingSlotRect.left,
+          y: incomingSlotRect.top,
+        };
+      } else {
+        const rowRect = numberRowRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
+        if (rowRect) {
+          const cardIndex = targetPlayer.numberCards.findIndex((card) => card.id === pendingDrawAnimation.card.id);
+          const spacing = getCardSpacing(rowRect.width, targetPlayer.numberCards.length);
+
+          destination = {
+            x: rowRect.left + Math.max(cardIndex, 0) * spacing,
+            y: rowRect.top,
+          };
+        }
+      }
+    } else {
+      const handAreaRect = cardsAreaRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
+      if (handAreaRect) {
+        destination = {
+          x: handAreaRect.left,
+          y: handAreaRect.top,
+        };
+      }
+    }
+
+    setFloatingCardMetrics({ source, destination });
+  }, [gameState, pendingDrawAnimation]);
 
   if (!gameState) {
     return (
@@ -192,6 +333,24 @@ export function Game() {
   // Separate AI from Human
   const aiPlayers = players.filter(p => p.isAI);
   const hasFlip7 = players.some(p => new Set(p.numberCards.map(c => c.value)).size >= 7);
+
+  function registerNumberRowRef(playerId: string) {
+    return (node: HTMLDivElement | null) => {
+      numberRowRefs.current[playerId] = node;
+    };
+  }
+
+  function registerCardsAreaRef(playerId: string) {
+    return (node: HTMLDivElement | null) => {
+      cardsAreaRefs.current[playerId] = node;
+    };
+  }
+
+  function registerIncomingSlotRef(playerId: string) {
+    return (node: HTMLDivElement | null) => {
+      incomingSlotRefs.current[playerId] = node;
+    };
+  }
 
   return (
     <div style={{
@@ -259,7 +418,10 @@ export function Game() {
                 key={ai.id} 
                 player={ai} 
                 isActive={players[activePlayerIndex]?.id === ai.id && phase === 'play'} 
-                pendingCardPlacement={pendingCardPlacement}
+                pendingDrawAnimation={pendingDrawAnimation}
+                numberRowRef={registerNumberRowRef(ai.id)}
+                cardsAreaRef={registerCardsAreaRef(ai.id)}
+                incomingSlotRef={registerIncomingSlotRef(ai.id)}
               />
             ))}
           </div>
@@ -267,37 +429,34 @@ export function Game() {
 
         {/* Center Table (Draw Deck & Events) */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: 'var(--space-4) 0', minHeight: '140px' }}>
-          {/* Deck permanently offset to the left */}
-          <div style={{ position: 'relative', width: '80px', height: '112px', marginRight: '60px' }}>
-             {drawPile.length > 0 && Array.from({ length: Math.min(5, Math.max(1, Math.ceil(drawPile.length / 10))) }).map((_, i) => (
-                <div key={i} style={{ position: 'absolute', top: -i * 2, left: -i * 2, zIndex: i }}>
-                   <Card isFaceDown />
-                </div>
-             ))}
-             {drawPile.length === 0 && (
-                <div style={{ width: '100%', height: '100%', border: '2px dashed var(--outline)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-surface-variant)' }}>Empty</div>
-             )}
-             
-             <div style={{ position: 'absolute', bottom: -24, left: -20, right: -20, textAlign: 'center', fontSize: '0.75rem', color: 'var(--on-surface-variant)', fontWeight: 600 }}>
-                 {drawPile.length} CARDS
-             </div>
+          {/* Deck permanently offset to the left, with a flip slot beside it */}
+          <div style={{ position: 'relative', width: '180px', height: '112px' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '80px', height: '112px' }}>
+              {drawPile.length > 0 && Array.from({ length: Math.min(5, Math.max(1, Math.ceil(drawPile.length / 10))) }).map((_, i) => (
+                  <div key={i} style={{ position: 'absolute', top: -i * 2, left: -i * 2, zIndex: i }}>
+                    <Card isFaceDown />
+                  </div>
+              ))}
+              {drawPile.length === 0 && (
+                  <div style={{ width: '100%', height: '100%', border: '2px dashed var(--outline)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-surface-variant)' }}>Empty</div>
+              )}
+              
+              <div style={{ position: 'absolute', bottom: -24, left: -20, right: -20, textAlign: 'center', fontSize: '0.75rem', color: 'var(--on-surface-variant)', fontWeight: 600 }}>
+                  {drawPile.length} CARDS
+              </div>
+            </div>
 
-             {pendingCardPlacement && (
-               <motion.div
-                 layoutId={pendingCardPlacement.id}
-                 initial={false}
-                 animate={{ opacity: 1, scale: 1, x: 100 }}
-                 transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                 style={{
-                   position: 'absolute',
-                   top: 0,
-                   left: 0,
-                   zIndex: 20
-                 }}
-               >
-                 <Card card={pendingCardPlacement} />
-               </motion.div>
-             )}
+            <div
+              ref={deckFlipAnchorRef}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: '100px',
+                width: `${CARD_WIDTH}px`,
+                height: `${CARD_HEIGHT}px`,
+                pointerEvents: 'none',
+              }}
+            />
           </div>
         </div>
 
@@ -336,11 +495,45 @@ export function Game() {
             <PlayerHand 
               player={humanPlayer} 
               isActive={players[activePlayerIndex]?.id === humanPlayer.id && phase === 'play'} 
-              pendingCardPlacement={pendingCardPlacement}
+              pendingDrawAnimation={pendingDrawAnimation}
+              numberRowRef={registerNumberRowRef(humanPlayer.id)}
+              cardsAreaRef={registerCardsAreaRef(humanPlayer.id)}
+              incomingSlotRef={registerIncomingSlotRef(humanPlayer.id)}
             />
           </div>
         )}
       </main>
+
+      {pendingDrawAnimation && floatingCardMetrics && (
+        <motion.div
+          initial={false}
+          animate={{
+            x: pendingDrawAnimation.phase === 'travel' ? floatingCardMetrics.destination.x : floatingCardMetrics.source.x,
+            y: pendingDrawAnimation.phase === 'travel' ? floatingCardMetrics.destination.y : floatingCardMetrics.source.y,
+            rotate: 0,
+            scale: pendingDrawAnimation.phase === 'spawn' ? 0.985 : 1,
+          }}
+          transition={
+            pendingDrawAnimation.phase === 'travel'
+              ? { type: 'tween', duration: 0.56, ease: [0.22, 0.8, 0.2, 1] }
+              : { type: 'spring', stiffness: 280, damping: 22, mass: 0.82 }
+          }
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            zIndex: 30,
+            pointerEvents: 'none',
+          }}
+        >
+          <Card
+            card={pendingDrawAnimation.card}
+            isFaceDown={pendingDrawAnimation.phase === 'spawn'}
+            disableIntroAnimation
+            flipOrigin="left center"
+          />
+        </motion.div>
+      )}
 
       {/* Footer / Controls */}
       <footer style={{

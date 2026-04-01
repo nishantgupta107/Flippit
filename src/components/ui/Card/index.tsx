@@ -1,25 +1,38 @@
-// Removed unused React import
+import type { CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import type { Card as CardType, PlayerState as PlayerType } from '../../../engine/types';
+import { DRAW_FLIP_DURATION_MS } from '../../../store/drawAnimation';
 
 interface CardProps {
   card?: CardType;
   isFaceDown?: boolean;
   onClick?: () => void;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
   className?: string;
   status?: PlayerType['status'];
+  disableIntroAnimation?: boolean;
+  flipOrigin?: CSSProperties['transformOrigin'];
 }
 
-export function Card({ card, isFaceDown, onClick, style, className = '', status }: CardProps) {
+export function Card({
+  card,
+  isFaceDown,
+  onClick,
+  style,
+  className = '',
+  status,
+  disableIntroAnimation = false,
+  flipOrigin = 'center center',
+}: CardProps) {
   // Dimensions and base styling
-  const baseStyle: React.CSSProperties = {
+  const baseStyle: CSSProperties = {
     width: 'var(--card-width, 80px)',
     aspectRatio: '5 / 7',
     cursor: onClick ? 'pointer' : 'default',
     position: 'relative',
     userSelect: 'none',
     perspective: 1000,
+    perspectiveOrigin: flipOrigin,
     ...style,
   };
 
@@ -141,23 +154,32 @@ export function Card({ card, isFaceDown, onClick, style, className = '', status 
       onClick={onClick}
       whileHover={onClick ? { y: -5 } : { y: 0 }}
       layout
-      initial={{ scale: 0.5, opacity: 0 }}
-      animate={{ 
-        scale: 1, 
-        opacity: 1,
-        boxShadow: isBusted ? '0 0 15px var(--error)' : 'var(--shadow-float)'
-      }}
-      transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+      initial={disableIntroAnimation ? false : { scale: 0.5, opacity: 0 }}
+      animate={
+        disableIntroAnimation
+          ? { boxShadow: isBusted ? '0 0 15px var(--error)' : 'var(--shadow-float)' }
+          : {
+              scale: 1,
+              opacity: 1,
+              boxShadow: isBusted ? '0 0 15px var(--error)' : 'var(--shadow-float)',
+            }
+      }
+      transition={
+        disableIntroAnimation
+          ? { duration: 0.2 }
+          : { type: 'spring', stiffness: 260, damping: 20 }
+      }
     >
       <motion.div
-        initial={{ rotateY: 180 }}
+        initial={false}
         animate={{ rotateY: isFaceDown ? 180 : 0 }}
-        transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+        transition={{ duration: DRAW_FLIP_DURATION_MS / 1000, ease: [0.22, 1, 0.36, 1] }}
         style={{
           width: '100%',
           height: '100%',
           position: 'relative',
           transformStyle: 'preserve-3d',
+          transformOrigin: flipOrigin,
         }}
       >
         {/* FRONT SIDE */}
