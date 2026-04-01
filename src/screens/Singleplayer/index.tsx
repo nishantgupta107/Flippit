@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../store/gameStore';
 import { Button } from '../../components/ui/Button';
+import { DebugDumpButton } from '../../components/DebugDumpButton';
 import type { Difficulty } from '../../engine/types';
 
 export function Singleplayer() {
@@ -89,6 +90,7 @@ export function Singleplayer() {
           </Button>
         </div>
       </section>
+      <DebugDumpButton />
     </div>
   );
 }

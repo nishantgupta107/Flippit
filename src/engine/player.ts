@@ -1,6 +1,7 @@
 import type { Card, GameState, PlayerState } from './types';
 import { drawCard } from './deck';
 import { checkFlip7 } from './scoring';
+import { logGameEvent } from '../utils/eventLogger';
 
 /**
  * Check if drawing `newCard` would cause a bust for `player`.
@@ -96,8 +97,8 @@ function handleNumberCard(
       const updatedPlayer: PlayerState = { ...player, actionCards: newActionCards };
       const updatedPlayers = [...state.players];
       updatedPlayers[playerIndex] = updatedPlayer;
-
-      return {
+      
+      const result: GameState = {
         ...state,
         players: updatedPlayers,
         discardPile: [...state.discardPile, card],
@@ -108,6 +109,8 @@ function handleNumberCard(
           message: 'Second Chance saved you!',
         },
       };
+      logGameEvent('SECOND_CHANCE_USED', { playerId: player.id, cardValue: card.value }, result, player.id);
+      return result;
     }
 
     // Bust! Player scores 0 for the round. All their cards go to discard.
@@ -127,13 +130,15 @@ function handleNumberCard(
     ];
     const updatedPlayers = [...state.players];
     updatedPlayers[playerIndex] = bustedPlayer;
-
-    return {
+    
+    const bustResult: GameState = {
       ...state,
       players: updatedPlayers,
       discardPile: [...state.discardPile, ...allPlayerCards],
       lastEvent: { kind: 'bust', playerId: player.id, card },
     };
+    logGameEvent('PLAYER_BUSTED', { playerId: player.id, duplicateValue: card.value, cardCountDiscarded: allPlayerCards.length }, bustResult, player.id);
+    return bustResult;
   }
 
   // Normal number card: add to row
@@ -146,20 +151,24 @@ function handleNumberCard(
   if (checkFlip7(updatedPlayer)) {
     const updatedPlayers = [...state.players];
     updatedPlayers[playerIndex] = updatedPlayer;
-    return {
+    const flip7Result: GameState = {
       ...state,
       players: updatedPlayers,
       lastEvent: { kind: 'flip_seven', playerId: player.id, card },
     };
+    logGameEvent('FLIP_SEVEN_ACHIEVED', { playerId: player.id, uniqueCards: updatedPlayer.numberCards.length }, flip7Result, player.id);
+    return flip7Result;
   }
 
   const updatedPlayers = [...state.players];
   updatedPlayers[playerIndex] = updatedPlayer;
-  return {
+  const normalResult: GameState = {
     ...state,
     players: updatedPlayers,
     lastEvent: { kind: 'card_drawn', playerId: player.id, card },
   };
+  logGameEvent('NUMBER_CARD_ADDED', { playerId: player.id, cardValue: card.value, uniqueCount: updatedPlayer.numberCards.length }, normalResult, player.id);
+  return normalResult;
 }
 
 /**
@@ -177,9 +186,11 @@ export function stayPlayer(state: GameState, playerId: string): GameState {
   const updatedPlayers = [...state.players];
   updatedPlayers[playerIndex] = { ...player, status: 'stayed' };
 
-  return {
+  const result: GameState = {
     ...state,
     players: updatedPlayers,
     lastEvent: { kind: 'stay', playerId },
   };
+  logGameEvent('PLAYER_STAYED', { playerId, cardsInHand: player.numberCards.length + player.modifierCards.length }, result, playerId);
+  return result;
 }

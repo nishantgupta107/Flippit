@@ -2,6 +2,7 @@ import type { Card, GameState, PlayerState } from './types';
 import { drawCard } from './deck';
 import { checkFlip7 } from './scoring';
 import { bustCheck, applyModifierCard } from './player';
+import { logGameEvent } from '../utils/eventLogger';
 
 /**
  * Freeze: target player must immediately bank all points and exit the round.
@@ -22,7 +23,7 @@ export function resolveFreeze(state: GameState, targetId: string): GameState {
   const updatedPlayers = [...state.players];
   updatedPlayers[targetIdx] = frozenPlayer;
 
-  return {
+  const result: GameState = {
     ...state,
     players: updatedPlayers,
     lastEvent: {
@@ -31,6 +32,8 @@ export function resolveFreeze(state: GameState, targetId: string): GameState {
       message: `${target.name} is frozen!`,
     },
   };
+  logGameEvent('PLAYER_FROZEN', { targetId, targetName: target.name }, result, targetId);
+  return result;
 }
 
 /**
@@ -41,7 +44,7 @@ export function startFlipThree(state: GameState, targetId: string): GameState {
   const target = state.players.find((p) => p.id === targetId);
   if (!target) throw new Error(`Player ${targetId} not found`);
 
-  return {
+  const result: GameState = {
     ...state,
     pendingAction: {
       type: 'flip_three',
@@ -55,6 +58,8 @@ export function startFlipThree(state: GameState, targetId: string): GameState {
       message: `${target.name} must draw 3 cards!`,
     },
   };
+  logGameEvent('FLIP_THREE_STARTED', { targetId, targetName: target.name }, result, targetId);
+  return result;
 }
 
 /**

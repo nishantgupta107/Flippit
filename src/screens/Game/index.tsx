@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { ScoreHUD } from '../../components/ui/ScoreHUD';
 import { Chip } from '../../components/ui/Chip';
+import { DebugDumpButton } from '../../components/DebugDumpButton';
 
 // ─── Player Hand View ─────────────────────────────────────────────────────────
 
@@ -303,6 +304,7 @@ export function Game() {
         )}
       </AnimatePresence>
 
+      <DebugDumpButton />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { applyRoundScores, checkFlip7, checkWinCondition } from './scoring';
 import { hitPlayer, stayPlayer } from './player';
 import { resolveFreeze, resolveSecondChance, startFlipThree, continueFlipThree } from './actions';
 import { aiDecide, selectFreezeTarget, selectFlipThreeTarget } from './ai';
+import { logGameEvent, logAIEvent } from '../utils/eventLogger';
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,8 @@ function dealNextCard(state: GameState): GameState {
 
   let card: Card;
   [s, card] = drawCard(s);
+  
+  logGameEvent('CARD_DEALT', { playerId: player.id, cardType: card.type, cardValue: card.value || card.modifier || card.action }, s, player.id);
 
   if (card.type === 'number') {
     const updatedPlayers = [...s.players];
@@ -190,20 +193,16 @@ export function nextTurn(state: GameState): GameState {
   return { ...state, activePlayerIndex: nextIdx };
 }
 
-/**
- * End the current round:
- * 1. Tally scores
- * 2. Check win condition
- * 3. Move all cards to discard pile
- * 4. Rotate dealer
- */
 export function endRound(state: GameState, flip7WinnerId: string | null = null): GameState {
   // Apply round scores
   let s = applyRoundScores(state, flip7WinnerId);
+  
+  logGameEvent('ROUND_ENDED', { flip7WinnerId, scores: s.players.map(p => ({ id: p.id, roundScore: p.roundScore, totalScore: p.totalScore })) }, s);
 
   // Check for game win
   const winnerId = checkWinCondition(s);
   if (winnerId) {
+    logGameEvent('GAME_OVER', { winnerId, finalScores: s.players.map(p => ({ id: p.id, totalScore: p.totalScore })) }, s, winnerId);
     return {
       ...s,
       phase: 'game_over',
@@ -295,6 +294,7 @@ export function executeAITurn(state: GameState): GameState {
   if (!aiPlayer || aiPlayer.status !== 'active') return nextTurn(state);
 
   const decision = aiDecide(aiPlayer, state, aiPlayer.difficulty ?? 'easy');
+  logAIEvent('AI_DECISION', { playerId: aiPlayer.id, decision, difficulty: aiPlayer.difficulty }, state, aiPlayer.id);
 
   if (decision === 'stay') {
     const s = stayPlayer(state, aiPlayer.id);

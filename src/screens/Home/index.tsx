@@ -1,6 +1,7 @@
 // Removed unused React import
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
+import { DebugDumpButton } from '../../components/DebugDumpButton';
 
 export function Home() {
   const navigate = useNavigate();
@@ -57,6 +58,7 @@ export function Home() {
           How to Play
         </Button>
       </div>
+      <DebugDumpButton />
     </div>
   );
 }

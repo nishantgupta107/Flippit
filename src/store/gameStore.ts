@@ -10,6 +10,7 @@ import {
   nextTurn,
   dealNextCard,
 } from '../engine/game';
+import { logUserAction, logGameEvent, logAIEvent } from '../utils/eventLogger';
 
 interface GameStore {
   gameState: GameState | null;
@@ -30,7 +31,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isAIThinking: false,
 
   startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
+    logUserAction('START_GAME_CLICKED', { difficulty, aiCount });
     const initial = initGame(difficulty, aiCount);
+    logGameEvent('GAME_INITIALIZED', { playerCount: initial.players.length, dealerIndex: initial.dealerIndex }, initial);
     const afterDeal = startRound(initial);
     performDealSequence(afterDeal, set, get);
   },
@@ -44,7 +47,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!humanPlayer || humanPlayer.status !== 'active') return;
     if (gameState.activePlayerIndex !== gameState.players.indexOf(humanPlayer)) return;
 
+    logUserAction('HIT_CLICKED', { playerId: humanPlayer.id, playerIndex: gameState.players.indexOf(humanPlayer) }, gameState);
     const newState = humanHit(gameState);
+    logGameEvent('HIT_EXECUTED', { playerId: humanPlayer.id, cardDrawn: !!newState.lastEvent?.card }, newState, humanPlayer.id);
     
     // Process the hit result (might include a toast)
     processGameStateUpdate(newState, set, get, () => {
@@ -70,7 +75,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!humanPlayer || humanPlayer.status !== 'active') return;
     if (gameState.activePlayerIndex !== gameState.players.indexOf(humanPlayer)) return;
 
+    logUserAction('STAY_CLICKED', { playerId: humanPlayer.id, playerIndex: gameState.players.indexOf(humanPlayer) }, gameState);
     const newState = humanStay(gameState);
+    logGameEvent('STAY_EXECUTED', { playerId: humanPlayer.id, roundScore: humanPlayer.roundScore }, newState, humanPlayer.id);
     processGameStateUpdate(newState, set, get, () => {
       scheduleAIIfNeeded(get().gameState!, set, get);
     });
@@ -80,11 +87,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { gameState } = get();
     if (!gameState || gameState.phase !== 'round_end') return;
 
+    logUserAction('START_NEXT_ROUND_CLICKED', { roundNumber: gameState.roundNumber + 1 }, gameState);
     const newState = startRound(gameState);
+    logGameEvent('ROUND_STARTED', { roundNumber: newState.roundNumber, dealerIndex: newState.dealerIndex }, newState);
     performDealSequence(newState, set, get);
   },
 
   resetGame: () => {
+    logUserAction('RESET_GAME_CLICKED');
+    logGameEvent('GAME_RESET');
     set({ gameState: null, isAIThinking: false });
   },
 }));
@@ -103,6 +114,7 @@ function scheduleAIIfNeeded(
   if (!activePlayer?.isAI) return;
   if (activePlayer.status !== 'active') return;
 
+  logAIEvent('AI_TURN_SCHEDULED', { playerId: activePlayer.id, difficulty: activePlayer.difficulty }, state, activePlayer.id);
   set({ isAIThinking: true });
   setTimeout(() => {
     const { gameState } = get();
@@ -111,7 +123,16 @@ function scheduleAIIfNeeded(
       return;
     }
 
+    const aiPlayer = gameState.players[gameState.activePlayerIndex];
+    logAIEvent('AI_TURN_STARTED', { playerId: aiPlayer.id }, gameState, aiPlayer.id);
+    
     let newState = executeAITurn(gameState);
+    
+    logAIEvent('AI_TURN_COMPLETED', { 
+      playerId: aiPlayer.id, 
+      action: newState.lastEvent?.kind || 'unknown',
+      newStatus: newState.players[gameState.activePlayerIndex].status 
+    }, newState, aiPlayer.id);
 
     processGameStateUpdate(newState, set, get, () => {
       const currentState = get().gameState;
