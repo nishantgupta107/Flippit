@@ -24,14 +24,23 @@ class NetworkManager {
     // Generate a random 4-6 character room code
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    this.peer = new Peer(`flippit-${roomId}`);
+    // Explicitly configure PeerJS with debugging enabled
+    this.peer = new Peer(`flippit-${roomId}`, { debug: 2 });
 
     this.peer.on('open', () => {
+      console.log(`[Host] Peer open. Room ID: ${roomId}`);
       onReady(roomId);
     });
 
+    this.peer.on('error', (err) => {
+      console.error('[Host] PeerJS Error:', err);
+    });
+
     this.peer.on('connection', (conn) => {
+      console.log(`[Host] Incoming connection from ${conn.peer}`);
+
       conn.on('open', () => {
+        console.log(`[Host] Connection opened with ${conn.peer}`);
         this.connections.set(conn.peer, conn);
       });
 
@@ -39,6 +48,7 @@ class NetworkManager {
         const msg = data as NetworkMessage;
         // Intercept join messages at the network layer to track names
         if (msg.type === 'PLAYER_JOINED') {
+          console.log(`[Host] Player Joined: ${msg.name} (${msg.playerId})`);
           if (onClientJoined) {
             onClientJoined(msg.playerId, msg.name);
           }
@@ -49,7 +59,12 @@ class NetworkManager {
         }
       });
 
+      conn.on('error', (err) => {
+        console.error(`[Host] Connection error with ${conn.peer}:`, err);
+      });
+
       conn.on('close', () => {
+        console.log(`[Host] Connection closed with ${conn.peer}`);
         this.connections.delete(conn.peer);
         if (onClientLeft) {
           onClientLeft(conn.peer);
@@ -60,14 +75,28 @@ class NetworkManager {
 
   joinRoom(roomId: string, playerName: string, onConnected: () => void, onError: (err: any) => void) {
     this.isHost = false;
-    this.peer = new Peer(); // Client gets a random ID
+    this.peer = new Peer({ debug: 2 }); // Client gets a random ID
+
+    let connectionTimeout: any;
 
     this.peer.on('open', (id) => {
+      console.log(`[Client] Peer open. My ID: ${id}. Connecting to flippit-${roomId}...`);
       // Store our own client ID so the UI knows who we are
       localStorage.setItem('clientId', id);
-      const conn = this.peer!.connect(`flippit-${roomId}`);
+
+      const conn = this.peer!.connect(`flippit-${roomId}`, {
+        reliable: true
+      });
+
+      // Set a 10 second timeout for the connection
+      connectionTimeout = setTimeout(() => {
+        console.error('[Client] Connection timeout');
+        onError(new Error('Connection timed out. Ensure the host is still active and on the same network.'));
+      }, 10000);
 
       conn.on('open', () => {
+        console.log('[Client] Connection opened with Host');
+        clearTimeout(connectionTimeout);
         this.connections.set('host', conn);
         // Announce ourselves immediately
         conn.send({ type: 'PLAYER_JOINED', playerId: id, name: playerName } as NetworkMessage);
@@ -80,9 +109,21 @@ class NetworkManager {
         }
       });
 
-      conn.on('error', onError);
+      conn.on('error', (err) => {
+        console.error('[Client] Connection Error:', err);
+        clearTimeout(connectionTimeout);
+        onError(err);
+      });
 
-      this.peer!.on('error', onError);
+      conn.on('close', () => {
+        console.log('[Client] Connection closed by Host');
+      });
+    });
+
+    this.peer.on('error', (err) => {
+      console.error('[Client] PeerJS Error:', err);
+      clearTimeout(connectionTimeout);
+      onError(err);
     });
   }
 
