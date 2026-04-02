@@ -27,6 +27,7 @@ interface GameStore {
 
   // Actions
   startGame: (difficulty?: Difficulty, aiCount?: number) => void;
+  startMultiplayerGame: (players: { id: string, name: string }[]) => void;
   hit: (playerId?: string) => void;
   stay: (playerId?: string) => void;
   startNextRound: () => void;
@@ -48,6 +49,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
     logUserAction('START_GAME_CLICKED', { difficulty, aiCount });
     const initial = initGame(difficulty, aiCount);
+    logGameEvent('GAME_INITIALIZED', { playerCount: initial.players.length, dealerIndex: initial.dealerIndex }, initial);
+    const afterDeal = startRound(initial);
+    performDealSequence(afterDeal, set, get);
+  },
+
+  startMultiplayerGame: (players: { id: string, name: string }[]) => {
+    logUserAction('START_MULTIPLAYER_GAME', { players });
+
+    // We'll map the provided players to the engine
+    const { initMultiplayerGame } = require('../engine/game');
+    const initial = initMultiplayerGame(players);
     logGameEvent('GAME_INITIALIZED', { playerCount: initial.players.length, dealerIndex: initial.dealerIndex }, initial);
     const afterDeal = startRound(initial);
     performDealSequence(afterDeal, set, get);

@@ -15,7 +15,10 @@ class NetworkManager {
   private isHost: boolean = true;
   private onMessageCallback: MessageHandler | null = null;
 
-  initHost(onReady: (roomId: string) => void) {
+  initHost(
+    onReady: (roomId: string) => void,
+    onClientJoined?: (clientId: string) => void
+  ) {
     this.isHost = true;
     // Generate a random 4-6 character room code
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -29,7 +32,9 @@ class NetworkManager {
     this.peer.on('connection', (conn) => {
       conn.on('open', () => {
         this.connections.set(conn.peer, conn);
-        // We could send current state immediately here
+        if (onClientJoined) {
+          onClientJoined(conn.peer);
+        }
       });
 
       conn.on('data', (data) => {
@@ -48,7 +53,9 @@ class NetworkManager {
     this.isHost = false;
     this.peer = new Peer(); // Client gets a random ID
 
-    this.peer.on('open', () => {
+    this.peer.on('open', (id) => {
+      // Store our own client ID so the UI knows who we are
+      localStorage.setItem('clientId', id);
       const conn = this.peer!.connect(`flippit-${roomId}`);
 
       conn.on('open', () => {

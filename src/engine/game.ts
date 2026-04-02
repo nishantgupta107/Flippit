@@ -51,6 +51,24 @@ export function initGame(aiDifficulty: Difficulty = 'easy', aiCount: number = 1)
   };
 }
 
+export function initMultiplayerGame(humanPlayers: { id: string, name: string }[]): GameState {
+  const deck = shuffle(buildDeck());
+  const players: PlayerState[] = humanPlayers.map(p => makePlayer(p.id, p.name, false));
+
+  return {
+    phase: 'deal',
+    drawPile: deck,
+    discardPile: [],
+    players: players,
+    dealerIndex: 0,
+    activePlayerIndex: 1, // player left of dealer goes first
+    roundNumber: 1,
+    pendingAction: null,
+    winner: null,
+    lastEvent: null,
+  };
+}
+
 // ─── Round Lifecycle ─────────────────────────────────────────────────────────
 
 /**

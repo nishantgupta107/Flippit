@@ -13,15 +13,21 @@ export function MultiplayerLobby() {
 
   const setHostStatus = useGameStore(s => s.setHostStatus);
 
+  const startMultiplayerGame = useGameStore(s => s.startMultiplayerGame);
+
   const handleHost = () => {
     setIsConnecting(true);
     setHostStatus(true);
     networkManager.initHost((id) => {
-      // In a real app, you might wait for a player to join before starting.
-      // For now, let's just create the room and move to the game screen
-      // The game screen will need to display the room code to share.
       setIsConnecting(false);
       navigate(`/game?room=${id}&role=host`);
+    }, (clientId) => {
+      // Start game when a client joins
+      // Host is hardcoded to "human" so they can control, client is clientId
+      startMultiplayerGame([
+        { id: 'human', name: 'Host' },
+        { id: clientId, name: 'Guest' }
+      ]);
     });
   };
 

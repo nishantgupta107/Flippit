@@ -390,13 +390,17 @@ export function Game() {
 
   const { phase, players, activePlayerIndex, roundNumber, drawPile, lastEvent, winner } = gameState;
   
-  const humanIdx = players.findIndex((p) => !p.isAI);
+  // Determine who the local human player is based on network role
+  const isMultiplayer = !!new URLSearchParams(window.location.search).get('room');
+  const localPlayerId = isMultiplayer ? (isHost ? 'human' : localStorage.getItem('clientId') || 'human') : players.find((p) => !p.isAI)?.id;
+
+  const humanIdx = players.findIndex((p) => p.id === localPlayerId);
   const humanPlayer = players[humanIdx];
   const isHumanTurn = activePlayerIndex === humanIdx && phase === 'play';
   const canAct = isHumanTurn && !isAIThinking && humanPlayer?.status === 'active';
 
-  // Separate AI from Human
-  const aiPlayers = players.filter(p => p.isAI);
+  // In multiplayer, everyone else is an opponent (even if they are human). In singleplayer, it's AI.
+  const aiPlayers = players.filter(p => p.id !== localPlayerId);
   const hasFlip7 = players.some(p => new Set(p.numberCards.map(c => c.value)).size >= 7);
 
   function registerNumberRowRef(playerId: string) {
