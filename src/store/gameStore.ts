@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { GameState, Difficulty } from '../engine/types';
 import {
   initGame,
-  startRound,
+  setupRound,
   humanHit,
   humanStay,
   executeAITurn,
@@ -42,7 +42,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     logUserAction('START_GAME_CLICKED', { difficulty, aiCount });
     const initial = initGame(difficulty, aiCount);
     logGameEvent('GAME_INITIALIZED', { playerCount: initial.players.length, dealerIndex: initial.dealerIndex }, initial);
-    const afterDeal = startRound(initial);
+    const afterDeal = setupRound(initial);
     performDealSequence(afterDeal, set, get);
   },
 
@@ -96,7 +96,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!gameState || gameState.phase !== 'round_end') return;
 
     logUserAction('START_NEXT_ROUND_CLICKED', { roundNumber: gameState.roundNumber + 1 }, gameState);
-    const newState = startRound(gameState);
+    const newState = setupRound(gameState);
     logGameEvent('ROUND_STARTED', { roundNumber: newState.roundNumber, dealerIndex: newState.dealerIndex }, newState);
     performDealSequence(newState, set, get);
   },

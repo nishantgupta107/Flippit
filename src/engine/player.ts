@@ -114,11 +114,15 @@ function handleNumberCard(
     }
 
     // Bust! Player scores 0 for the round.
+    const discardedCards = [...player.numberCards, ...player.modifierCards, ...player.actionCards, card];
+
     const bustedPlayer: PlayerState = {
       ...player,
       status: 'busted',
       roundScore: 0,
-      numberCards: [...player.numberCards, card].sort((a, b) => (a.value ?? 0) - (b.value ?? 0)),
+      numberCards: [],
+      modifierCards: [],
+      actionCards: [],
     };
     const updatedPlayers = [...state.players];
     updatedPlayers[playerIndex] = bustedPlayer;
@@ -126,9 +130,10 @@ function handleNumberCard(
     const bustResult: GameState = {
       ...state,
       players: updatedPlayers,
+      discardPile: [...state.discardPile, ...discardedCards],
       lastEvent: { kind: 'bust', playerId: player.id, card },
     };
-    logGameEvent('PLAYER_BUSTED', { playerId: player.id, duplicateValue: card.value, cardCountDiscarded: bustedPlayer.numberCards.length + bustedPlayer.actionCards.length + bustedPlayer.modifierCards.length }, bustResult, player.id);
+    logGameEvent('PLAYER_BUSTED', { playerId: player.id, duplicateValue: card.value, cardCountDiscarded: discardedCards.length }, bustResult, player.id);
     return bustResult;
   }
 

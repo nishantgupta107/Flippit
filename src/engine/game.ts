@@ -69,13 +69,10 @@ function resetPlayersForRound(state: GameState): GameState {
 }
 
 /**
- * Deal one card to each player in turn order.
- * If an action card is encountered during deal, resolve it immediately
- * before continuing to the next player.
- *
- * After all players have been dealt, transition to 'play' phase.
+ * Initialize a new round, putting the game into the 'deal' phase.
+ * Ready for cards to be dealt.
  */
-export function startRound(state: GameState): GameState {
+export function setupRound(state: GameState): GameState {
   let s = resetPlayersForRound(state);
 
   // Set phase to deal, and first player to deal to is dealer's left
@@ -83,6 +80,29 @@ export function startRound(state: GameState): GameState {
     ...s,
     phase: 'deal',
     activePlayerIndex: (s.dealerIndex + 1) % s.players.length,
+    lastEvent: null,
+  };
+
+  return s;
+}
+
+/**
+ * Deal one card to each player in turn order.
+ * If an action card is encountered during deal, resolve it immediately
+ * before continuing to the next player.
+ *
+ * After all players have been dealt, transition to 'play' phase.
+ */
+export function startRound(state: GameState): GameState {
+  let s = setupRound(state);
+
+  for (let i = 0; i < s.players.length; i++) {
+    s = dealNextCard(s);
+  }
+
+  s = {
+    ...s,
+    phase: 'play',
     lastEvent: null,
   };
 
