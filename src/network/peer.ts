@@ -17,7 +17,8 @@ class NetworkManager {
 
   initHost(
     onReady: (roomId: string) => void,
-    onClientJoined?: (clientId: string) => void
+    onClientJoined?: (clientId: string, name: string) => void,
+    onClientLeft?: (clientId: string) => void
   ) {
     this.isHost = true;
     // Generate a random 4-6 character room code
@@ -32,24 +33,32 @@ class NetworkManager {
     this.peer.on('connection', (conn) => {
       conn.on('open', () => {
         this.connections.set(conn.peer, conn);
-        if (onClientJoined) {
-          onClientJoined(conn.peer);
-        }
       });
 
       conn.on('data', (data) => {
+        const msg = data as NetworkMessage;
+        // Intercept join messages at the network layer to track names
+        if (msg.type === 'PLAYER_JOINED') {
+          if (onClientJoined) {
+            onClientJoined(msg.playerId, msg.name);
+          }
+        }
+
         if (this.onMessageCallback) {
-          this.onMessageCallback(data as NetworkMessage);
+          this.onMessageCallback(msg);
         }
       });
 
       conn.on('close', () => {
         this.connections.delete(conn.peer);
+        if (onClientLeft) {
+          onClientLeft(conn.peer);
+        }
       });
     });
   }
 
-  joinRoom(roomId: string, onConnected: () => void, onError: (err: any) => void) {
+  joinRoom(roomId: string, playerName: string, onConnected: () => void, onError: (err: any) => void) {
     this.isHost = false;
     this.peer = new Peer(); // Client gets a random ID
 
@@ -60,6 +69,8 @@ class NetworkManager {
 
       conn.on('open', () => {
         this.connections.set('host', conn);
+        // Announce ourselves immediately
+        conn.send({ type: 'PLAYER_JOINED', playerId: id, name: playerName } as NetworkMessage);
         onConnected();
       });
 

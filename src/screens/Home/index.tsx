@@ -1,10 +1,21 @@
 // Removed unused React import
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { DebugDumpButton } from '../../components/DebugDumpButton';
+import { getPlayerName, setPlayerName } from '../../utils/nameGenerator';
 
 export function Home() {
   const navigate = useNavigate();
+  const [playerName, setLocalPlayerName] = useState(getPlayerName());
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState(playerName);
+
+  const handleSaveName = () => {
+    setPlayerName(editNameValue);
+    setLocalPlayerName(editNameValue);
+    setIsEditingName(false);
+  };
 
   return (
     <div style={{
@@ -17,6 +28,29 @@ export function Home() {
       position: 'relative',
       overflow: 'hidden'
     }}>
+      {/* Top right player name editor */}
+      <div style={{ position: 'absolute', top: 'var(--space-4)', right: 'var(--space-4)', zIndex: 10, display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--surface-container-low)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-full)', border: '1px solid var(--outline-variant)' }}>
+        {isEditingName ? (
+          <>
+            <input
+              autoFocus
+              value={editNameValue}
+              onChange={e => setEditNameValue(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+              onBlur={handleSaveName}
+              style={{ background: 'transparent', border: 'none', color: 'var(--on-surface)', outline: 'none', width: '120px', fontFamily: 'var(--font-body)' }}
+              maxLength={15}
+            />
+            <button onClick={handleSaveName} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', padding: 0 }}>✓</button>
+          </>
+        ) : (
+          <>
+            <span style={{ color: 'var(--on-surface-variant)', fontSize: '0.875rem' }}>{playerName}</span>
+            <button onClick={() => setIsEditingName(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.7 }}>✏️</button>
+          </>
+        )}
+      </div>
+
       {/* Background ambient light */}
       <div style={{
         position: 'absolute',
