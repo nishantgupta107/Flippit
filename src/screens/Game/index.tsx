@@ -313,9 +313,11 @@ function SecondChanceSparkle({ playerId, players }: { playerId: string; players:
 
 // ─── Game Screen ──────────────────────────────────────────────────────────────
 
+import { networkManager } from '../../network/peer';
+
 export function Game() {
   const navigate = useNavigate();
-  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame, pendingDrawAnimation } = useGameStore();
+  const { gameState, isAIThinking, hit, stay, startNextRound, resetGame, pendingDrawAnimation, isHost } = useGameStore();
   const deckFlipAnchorRef = useRef<HTMLDivElement | null>(null);
   const numberRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cardsAreaRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -453,8 +455,13 @@ export function Game() {
       }}>
         <ScoreHUD score={humanPlayer?.totalScore ?? 0} label="Total Score" />
         <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center' }}>
+          {new URLSearchParams(window.location.search).get('room') && (
+            <span style={{ fontSize: '0.875rem', color: 'var(--on-surface-variant)' }}>
+              Room: {new URLSearchParams(window.location.search).get('room')}
+            </span>
+          )}
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--primary)' }}>Round {roundNumber}</span>
-          <button onClick={() => { resetGame(); navigate('/'); }} style={{
+          <button onClick={() => { resetGame(); networkManager.disconnect(); navigate('/'); }} style={{
             background: 'transparent', border: 'none', color: 'var(--on-surface-variant)', fontSize: '1rem', cursor: 'pointer'
           }}>
             Quit
@@ -613,7 +620,13 @@ export function Game() {
             <Button 
               style={{ flex: 1 }} 
               disabled={!canAct} 
-              onClick={hit}
+              onClick={() => {
+                if (!isHost) {
+                  networkManager.sendAction('HIT', humanPlayer!.id);
+                } else {
+                  hit(humanPlayer!.id);
+                }
+              }}
             >
               HIT
             </Button>
@@ -621,7 +634,13 @@ export function Game() {
               variant="secondary" 
               style={{ flex: 1 }} 
               disabled={!canAct} 
-              onClick={stay}
+              onClick={() => {
+                if (!isHost) {
+                  networkManager.sendAction('STAY', humanPlayer!.id);
+                } else {
+                  stay(humanPlayer!.id);
+                }
+              }}
             >
               STAY
             </Button>
@@ -681,9 +700,11 @@ export function Game() {
               </div>
 
               {phase === 'round_end' ? (
-                <Button onClick={startNextRound}>Next Round</Button>
+                <Button onClick={() => isHost && startNextRound()} disabled={!isHost}>
+                  {isHost ? 'Next Round' : 'Waiting for Host...'}
+                </Button>
               ) : (
-                <Button onClick={() => { resetGame(); navigate('/'); }}>Play Again</Button>
+                <Button onClick={() => { resetGame(); networkManager.disconnect(); navigate('/'); }}>Play Again</Button>
               )}
             </motion.div>
           </motion.div>

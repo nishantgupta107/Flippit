@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AnimatePresence, motion } from 'framer-motion';
 import { Home } from './screens/Home';
 import { Singleplayer } from './screens/Singleplayer';
+import { MultiplayerLobby } from './screens/MultiplayerLobby';
 import { Game } from './screens/Game';
 
 function AnimatedRoutes() {
@@ -27,6 +28,16 @@ function AnimatedRoutes() {
             transition={{ duration: 0.3 }}
           >
             <Singleplayer />
+          </motion.div>
+        } />
+        <Route path="/multiplayer" element={
+          <motion.div
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            transition={{ duration: 0.3 }}
+          >
+            <MultiplayerLobby />
           </motion.div>
         } />
         <Route path="/game" element={

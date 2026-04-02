@@ -47,7 +47,7 @@ describe('humanHit / humanStay round flow', () => {
     // If AI is first, we skip this test's assumption
     if (state.activePlayerIndex !== humanIdx) return;
 
-    state = humanStay(state);
+    state = humanStay(state, state.players[humanIdx].id);
     expect(state.players[humanIdx].status).toBe('stayed');
   });
 });
@@ -165,7 +165,7 @@ describe('Deck exhaustion → reshuffle', () => {
     };
 
     // First hit exhausts draw pile
-    let afterHit = humanHit(state);
+    let afterHit = humanHit(state, updatedPlayers[humanIdx].id);
     // Draw pile should now have 0 cards, discard still has cardInDiscard
     // Second hit should trigger reshuffle
     // (Need to reset player to active for second hit)

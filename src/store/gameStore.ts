@@ -17,6 +17,7 @@ import {
   waitForNonCardEvent,
 } from './drawAnimation';
 import type { PendingDrawAnimation } from './drawAnimation';
+import { networkManager } from '../network/peer';
 
 interface GameStore {
   gameState: GameState | null;
@@ -122,6 +123,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 }));
 
+// Set up network listeners to bind PeerJS to the store
+networkManager.onMessage((msg) => {
+  const store = useGameStore.getState();
+
+  if (msg.type === 'ACTION' && store.isHost) {
+    // Host receives action from client and executes it
+    if (msg.action === 'HIT') {
+      store.hit(msg.playerId);
+    } else if (msg.action === 'STAY') {
+      store.stay(msg.playerId);
+    }
+  } else if (msg.type === 'STATE_UPDATE' && !store.isHost) {
+    // Client receives state update from host
+    store.syncGameState(msg.state);
+  }
+});
+
 /**
  * If the current active player is the AI, schedule their turn with a delay.
  */
@@ -172,6 +190,11 @@ function processGameStateUpdate(
   get: () => GameStore,
   onComplete: () => void
 ) {
+  // If we are host, broadcast the updated state to all clients
+  if (get().isHost) {
+    networkManager.broadcastState(state);
+  }
+
   const pendingDrawAnimation = getPendingDrawAnimation(state);
 
   if (pendingDrawAnimation) {

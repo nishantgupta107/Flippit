@@ -52,7 +52,10 @@ export function Home() {
 
       <div style={{ width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', zIndex: 1 }}>
         <Button onClick={() => navigate('/singleplayer')} style={{ width: '100%' }}>
-          Play Now
+          Play Singleplayer
+        </Button>
+        <Button variant="secondary" onClick={() => navigate('/multiplayer')} style={{ width: '100%' }}>
+          Local Multiplayer (LAN)
         </Button>
         <Button variant="tertiary" style={{ width: '100%' }}>
           How to Play
