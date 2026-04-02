@@ -207,12 +207,14 @@ export function continueFlipThree(state: GameState): GameState {
     ? null
     : { ...newState.pendingAction!, cardsRemaining: newRemaining };
 
-  return {
+  let finalState: GameState = {
     ...newState,
     players: updatedPlayers,
     pendingAction,
     lastEvent: { kind: 'flip_three_card', playerId: targetPlayerId, card: drawnCard },
   };
+
+  return finalState;
 }
 
 /**

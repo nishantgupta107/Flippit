@@ -9,6 +9,7 @@ import {
   continueFlipThree,
   nextTurn,
   dealNextCard,
+  finishPendingAction,
 } from '../engine/game';
 import { logUserAction, logGameEvent, logAIEvent } from '../utils/eventLogger';
 import {
@@ -61,15 +62,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     // Process the hit result (might include a toast)
     processGameStateUpdate(newState, set, get, () => {
-      // After processing the hit (and its possible Flip Three), check if Turn should advance
-      const currentState = get().gameState;
-      if (currentState && currentState.phase === 'play') {
-         const activePlayer = currentState.players[currentState.activePlayerIndex];
-         if (activePlayer && activePlayer.status !== 'active') {
-           const nextTurnState = nextTurn(currentState);
-           set({ gameState: nextTurnState });
-         }
-      }
       scheduleAIIfNeeded(get().gameState!, set, get);
     });
   },
@@ -143,14 +135,6 @@ function scheduleAIIfNeeded(
     }, newState, aiPlayer.id);
 
     processGameStateUpdate(newState, set, get, () => {
-      const currentState = get().gameState;
-      if (currentState && currentState.phase === 'play') {
-        const activePlayer = currentState.players[currentState.activePlayerIndex];
-        if (activePlayer && activePlayer.status !== 'active') {
-          const nextState = nextTurn(currentState);
-          set({ gameState: nextState });
-        }
-      }
       set({ isAIThinking: false });
       scheduleAIIfNeeded(get().gameState!, set, get);
     });
@@ -194,6 +178,14 @@ function processGameStateUpdate(
           return;
         }
 
+        if (state.pendingAction && !currentState.pendingAction) {
+          // A pending action was resolved in this chain. We must advance the turn.
+          const finalState = finishPendingAction(currentState);
+          if (finalState !== currentState) {
+            set({ gameState: finalState });
+          }
+        }
+
         onComplete();
       }
     );
@@ -216,6 +208,12 @@ function processGameStateUpdate(
         const nextState = continueFlipThree(currentState);
         processGameStateUpdate(nextState, set, get, onComplete);
       } else {
+        if (state.pendingAction && !currentState.pendingAction) {
+          const finalState = finishPendingAction(currentState);
+          if (finalState !== currentState) {
+             set({ gameState: finalState });
+          }
+        }
         onComplete();
       }
     });

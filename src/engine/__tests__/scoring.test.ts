@@ -57,6 +57,15 @@ describe('calculateRoundScore', () => {
     expect(calculateRoundScore(player)).toBe(24);
   });
 
+  it('applies multiple multipliers correctly', () => {
+    const player = makePlayer({
+      numberCards: [makeCard(4), makeCard(6)],
+      modifierCards: [makeModifier('x2'), makeModifier('x3'), makeModifier('+4')],
+    });
+    // (4 + 6) × 2 × 3 + 4 = 64
+    expect(calculateRoundScore(player)).toBe(64);
+  });
+
   it('applies flat modifiers without x2', () => {
     const player = makePlayer({
       numberCards: [makeCard(5)],

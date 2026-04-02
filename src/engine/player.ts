@@ -118,7 +118,7 @@ function handleNumberCard(
       ...player,
       status: 'busted',
       roundScore: 0,
-      numberCards: [...player.numberCards, card].sort((a, b) => (a.value ?? 0) - (b.value ?? 0)),
+      numberCards: [], // Clear hand on bust per rules
     };
     const updatedPlayers = [...state.players];
     updatedPlayers[playerIndex] = bustedPlayer;
