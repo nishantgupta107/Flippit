@@ -17,11 +17,16 @@ export function calculateRoundScore(player: PlayerState, hasFlipSeven = false): 
   let flatBonus = 0;
 
   for (const mod of player.modifierCards) {
-    if (mod.modifier === 'x2') {
-      multiplier = 2; // Only one x2 can exist; last one wins if somehow two appear
-    } else {
-      const val = parseInt(mod.modifier!.replace('+', ''), 10);
-      flatBonus += val;
+    if (mod.modifier?.startsWith('x')) {
+      const val = parseInt(mod.modifier.replace('x', ''), 10);
+      if (!isNaN(val)) {
+        multiplier *= val;
+      }
+    } else if (mod.modifier?.startsWith('+')) {
+      const val = parseInt(mod.modifier.replace('+', ''), 10);
+      if (!isNaN(val)) {
+        flatBonus += val;
+      }
     }
   }
 
@@ -30,7 +35,7 @@ export function calculateRoundScore(player: PlayerState, hasFlipSeven = false): 
 }
 
 /**
- * Check if a player has 7 unique number cards (Flip 7 condition).
+ * Check if a player has 7 number cards (Flip 7 condition).
  */
 export function checkFlip7(player: PlayerState): boolean {
   return player.numberCards.length >= 7;

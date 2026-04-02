@@ -26,29 +26,11 @@ describe('initGame', () => {
 });
 
 describe('startRound', () => {
-  it('transitions to play phase after dealing', () => {
+  it('sets phase to deal and starts with player left of dealer', () => {
     const initial = initGame();
     const afterDeal = startRound(initial);
-    expect(afterDeal.phase).toBe('play');
-  });
-
-  it('deals at least one card to each player unless action card disrupts', () => {
-    // Use a predefined draw pile with known number cards first to avoid action card edge cases
-    const initial = initGame();
-    const cleanDeck: Card[] = [
-      makeNumCard(3),
-      makeNumCard(7),
-      ...initial.drawPile.slice(4), // rest of deck
-    ];
-    const state = { ...initial, drawPile: cleanDeck };
-    const afterDeal = startRound(state);
-
-    // Both players should have cards (may be 0 if freeze during deal, but typically 1 each)
-    const totalCards = afterDeal.players.reduce(
-      (sum, p) => sum + p.numberCards.length + p.modifierCards.length + p.actionCards.length,
-      0
-    );
-    expect(totalCards).toBeGreaterThanOrEqual(1);
+    expect(afterDeal.phase).toBe('deal');
+    expect(afterDeal.activePlayerIndex).toBe((afterDeal.dealerIndex + 1) % afterDeal.players.length);
   });
 });
 

@@ -261,18 +261,25 @@ export function humanHit(state: GameState): GameState {
   if (event.kind === 'card_drawn' && event.card?.type === 'action') {
     // Resolve the action card
     s = resolveActionCard(s, event.card, humanPlayer.id);
+  }
 
-    // If the action directly deactivated the human (e.g., self-Freeze)
-    const updatedHuman = s.players.find((p) => p.id === humanPlayer.id);
-    if (updatedHuman && updatedHuman.status !== 'active') {
-      return nextTurn(s);
-    }
-
+  // Do not advance turn if there's a pending action (like Flip Three)
+  if (s.pendingAction) {
     return s;
   }
 
-  // Normal card drawn — stay on human's turn, let them decide again
-  return s;
+  return nextTurn(s);
+}
+
+/**
+ * Utility function to be called by the store after resolving a pending action.
+ * Advances the turn.
+ */
+export function finishPendingAction(state: GameState): GameState {
+  if (state.pendingAction) {
+    return state; // Still pending
+  }
+  return nextTurn(state);
 }
 
 /**
@@ -335,18 +342,16 @@ export function executeAITurn(state: GameState): GameState {
         break;
       }
     }
-    
-    // Check if the AI became inactive (e.g. self-Freeze or busted from own Flip Three)
-    const updatedAI = s.players.find((p) => p.id === aiPlayer.id);
-    if (updatedAI && updatedAI.status !== 'active' && s.phase === 'play') {
-      return nextTurn(s);
-    }
-    
+  }
+
+  // If a pending action is still active (e.g. paused for animation), wait.
+  // Note: executeAITurn is fully synchronous for its own actions, so it should have resolved its own flip three unless targeting a human.
+  // Wait, if AI targets human, the AI's flip three resolves immediately in the loop above.
+  if (s.pendingAction) {
     return s;
   }
 
-  // Normal card — AI's turn continues so they can hit again
-  return s;
+  return nextTurn(s);
 }
 
 // Re-export continueFlipThree and dealNextCard for the store to use
