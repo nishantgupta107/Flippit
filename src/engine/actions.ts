@@ -158,13 +158,11 @@ export function continueFlipThree(state: GameState): GameState {
     }
 
     // Bust during Flip Three — stop immediately, discard deferred actions too
+    // Keep numberCards for animation (cleared at round end)
     const bustedPlayer: PlayerState = {
       ...target,
       status: 'busted',
       roundScore: 0,
-      numberCards: [],
-      modifierCards: [],
-      actionCards: [],
     };
     const allCards = [
       ...target.numberCards,

@@ -134,7 +134,7 @@ describe('Flip 7 ends round immediately', () => {
       drawPile: [seventhCard, ...state.drawPile],
     };
 
-    const afterHit = humanHit(state);
+    const afterHit = humanHit(state, updatedPlayers[humanIdx].id);
     expect(afterHit.phase).toBe('round_end');
   });
 });

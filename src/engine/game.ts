@@ -240,9 +240,9 @@ export function endRound(state: GameState, flip7WinnerId: string | null = null):
  * - Resolving bust/Flip 7/action cards
  * - Advancing turn if needed
  */
-export function humanHit(state: GameState): GameState {
-  const humanPlayer = state.players.find((p) => !p.isAI);
-  if (!humanPlayer) return state;
+export function humanHit(state: GameState, playerId: string): GameState {
+  const humanPlayer = state.players.find((p) => p.id === playerId);
+  if (!humanPlayer || humanPlayer.isAI) return state;
   if (humanPlayer.status !== 'active') return state;
 
   let s = hitPlayer(state, humanPlayer.id);
@@ -285,9 +285,9 @@ export function finishPendingAction(state: GameState): GameState {
 /**
  * Human player stays.
  */
-export function humanStay(state: GameState): GameState {
-  const humanPlayer = state.players.find((p) => !p.isAI);
-  if (!humanPlayer) return state;
+export function humanStay(state: GameState, playerId: string): GameState {
+  const humanPlayer = state.players.find((p) => p.id === playerId);
+  if (!humanPlayer || humanPlayer.isAI) return state;
   if (humanPlayer.status !== 'active') return state;
 
   const s = stayPlayer(state, humanPlayer.id);

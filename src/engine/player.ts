@@ -114,11 +114,13 @@ function handleNumberCard(
     }
 
     // Bust! Player scores 0 for the round.
+    // Keep numberCards for animation (cleared at round end)
+    // Include the duplicate card that caused the bust
     const bustedPlayer: PlayerState = {
       ...player,
+      numberCards: [...player.numberCards, card].sort((a, b) => (a.value ?? 0) - (b.value ?? 0)),
       status: 'busted',
       roundScore: 0,
-      numberCards: [], // Clear hand on bust per rules
     };
     const updatedPlayers = [...state.players];
     updatedPlayers[playerIndex] = bustedPlayer;

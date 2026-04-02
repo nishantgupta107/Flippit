@@ -92,7 +92,8 @@ describe('hitPlayer — number cards', () => {
 
     const newState = hitPlayer(state, 'human');
     expect(newState.players[0].status).toBe('busted');
-    expect(newState.players[0].numberCards).toHaveLength(0);
+    // We retain the cards including the duplicate for UI animation
+    expect(newState.players[0].numberCards).toHaveLength(2);
     expect(newState.lastEvent?.kind).toBe('bust');
   });
 

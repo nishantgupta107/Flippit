@@ -191,7 +191,7 @@ function PlayerHand({
                 style={{ 
                   marginLeft: i === 0 ? '0px' : `min(0.5rem, ${overlapSpace})`,
                   zIndex: i,
-                  transformOrigin: 'bottom left',
+                  transformOrigin: 'center center',
                   borderRadius: 'var(--radius-md)',
                   flexShrink: 0
                 }}
@@ -244,6 +244,69 @@ function Flip7Celebration() {
           }}
         />
       ))}
+    </div>
+  );
+}
+
+// ─── Second Chance Sparkle ─────────────────────────────────────────────────────
+
+function SecondChanceSparkle({ playerId, players }: { playerId: string; players: PlayerState[] }) {
+  const player = players.find((p) => p.id === playerId);
+  if (!player) return null;
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1001, overflow: 'hidden' }}>
+      {/* Gold sparkle burst from center */}
+      {Array.from({ length: 20 }).map((_, i) => {
+        const angle = (i / 20) * Math.PI * 2;
+        const distance = 100 + Math.random() * 100;
+        return (
+          <motion.div
+            key={i}
+            initial={{
+              opacity: 1,
+              scale: 0,
+              x: '50vw',
+              y: '50vh',
+            }}
+            animate={{
+              opacity: 0,
+              scale: Math.random() * 1.5 + 0.5,
+              x: `calc(50vw + ${Math.cos(angle) * distance}px)`,
+              y: `calc(50vh + ${Math.sin(angle) * distance}px)`,
+            }}
+            transition={{
+              duration: 1.5,
+              ease: 'easeOut',
+              delay: i * 0.02
+            }}
+            style={{
+              position: 'absolute',
+              width: 8,
+              height: 8,
+              background: 'var(--primary)',
+              borderRadius: '50%',
+              boxShadow: '0 0 10px var(--primary), 0 0 20px var(--primary)',
+            }}
+          />
+        );
+      })}
+      {/* Center glow */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.5 }}
+        animate={{ opacity: [0, 1, 0], scale: [0.5, 1.5, 2] }}
+        transition={{ duration: 1, ease: 'easeOut' }}
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 100,
+          height: 100,
+          background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)',
+          borderRadius: '50%',
+        }}
+      />
     </div>
   );
 }
@@ -377,6 +440,7 @@ export function Game() {
       }} />
 
       {hasFlip7 && <Flip7Celebration />}
+      {lastEvent?.kind === 'second_chance_used' && <SecondChanceSparkle playerId={lastEvent.playerId} players={players} />}
 
       {/* Top Bar */}
       <header style={{ 

@@ -7,7 +7,6 @@ import {
   humanStay,
   executeAITurn,
   continueFlipThree,
-  nextTurn,
   dealNextCard,
   finishPendingAction,
 } from '../engine/game';
@@ -23,13 +22,18 @@ interface GameStore {
   gameState: GameState | null;
   isAIThinking: boolean;
   pendingDrawAnimation: PendingDrawAnimation | null;
+  isHost: boolean; // True for single-player, true for multiplayer host, false for multiplayer clients
 
   // Actions
   startGame: (difficulty?: Difficulty, aiCount?: number) => void;
-  hit: () => void;
-  stay: () => void;
+  hit: (playerId?: string) => void;
+  stay: (playerId?: string) => void;
   startNextRound: () => void;
   resetGame: () => void;
+
+  // Network Abstractions
+  setHostStatus: (isHost: boolean) => void;
+  syncGameState: (state: GameState) => void; // for clients to receive state updates from host
 }
 
 const AI_DELAY_MS = () => 500 + Math.random() * 300; // 500–800ms
@@ -38,6 +42,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
   isAIThinking: false,
   pendingDrawAnimation: null,
+  isHost: true,
 
   startGame: (difficulty: Difficulty = 'easy', aiCount: number = 1) => {
     logUserAction('START_GAME_CLICKED', { difficulty, aiCount });
@@ -47,17 +52,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     performDealSequence(afterDeal, set, get);
   },
 
-  hit: () => {
+  hit: (playerId?: string) => {
     const { gameState, isAIThinking } = get();
     if (!gameState || isAIThinking) return;
     if (gameState.phase !== 'play') return;
 
-    const humanPlayer = gameState.players.find((p) => !p.isAI);
+    // For single-player backward compatibility, if playerId is not provided, use the first human player
+    const targetId = playerId ?? gameState.players.find(p => !p.isAI)?.id;
+    if (!targetId) return;
+
+    const humanPlayer = gameState.players.find((p) => p.id === targetId);
     if (!humanPlayer || humanPlayer.status !== 'active') return;
     if (gameState.activePlayerIndex !== gameState.players.indexOf(humanPlayer)) return;
 
     logUserAction('HIT_CLICKED', { playerId: humanPlayer.id, playerIndex: gameState.players.indexOf(humanPlayer) }, gameState);
-    const newState = humanHit(gameState);
+    const newState = humanHit(gameState, humanPlayer.id);
     logGameEvent('HIT_EXECUTED', { playerId: humanPlayer.id, cardDrawn: !!newState.lastEvent?.card }, newState, humanPlayer.id);
     
     // Process the hit result (might include a toast)
@@ -66,17 +75,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
-  stay: () => {
+  stay: (playerId?: string) => {
     const { gameState, isAIThinking } = get();
     if (!gameState || isAIThinking) return;
     if (gameState.phase !== 'play') return;
 
-    const humanPlayer = gameState.players.find((p) => !p.isAI);
+    // For single-player backward compatibility, if playerId is not provided, use the first human player
+    const targetId = playerId ?? gameState.players.find(p => !p.isAI)?.id;
+    if (!targetId) return;
+
+    const humanPlayer = gameState.players.find((p) => p.id === targetId);
     if (!humanPlayer || humanPlayer.status !== 'active') return;
     if (gameState.activePlayerIndex !== gameState.players.indexOf(humanPlayer)) return;
 
     logUserAction('STAY_CLICKED', { playerId: humanPlayer.id, playerIndex: gameState.players.indexOf(humanPlayer) }, gameState);
-    const newState = humanStay(gameState);
+    const newState = humanStay(gameState, humanPlayer.id);
     logGameEvent('STAY_EXECUTED', { playerId: humanPlayer.id, roundScore: humanPlayer.roundScore }, newState, humanPlayer.id);
     processGameStateUpdate(newState, set, get, () => {
       scheduleAIIfNeeded(get().gameState!, set, get);
@@ -98,6 +111,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     logGameEvent('GAME_RESET');
     set({ gameState: null, isAIThinking: false, pendingDrawAnimation: null });
   },
+
+  setHostStatus: (isHost: boolean) => {
+    set({ isHost });
+  },
+
+  syncGameState: (state: GameState) => {
+    // Allows clients to update local state from a network message directly without running engine logic locally
+    set({ gameState: state });
+  },
 }));
 
 /**
@@ -109,6 +131,9 @@ function scheduleAIIfNeeded(
   get: () => GameStore
 ): void {
   if (state.phase !== 'play') return;
+
+  // Only the host should compute AI turns
+  if (!get().isHost) return;
 
   const activePlayer = state.players[state.activePlayerIndex];
   if (!activePlayer?.isAI) return;
