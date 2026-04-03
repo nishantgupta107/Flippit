@@ -1,17 +1,19 @@
 import type { GameState } from '../engine/types';
 
-export type PendingDrawPhase = 'spawn' | 'flip' | 'travel';
+export type PendingDrawPhase = 'spawn' | 'flip' | 'travel' | 'fade';
 
 export interface PendingDrawAnimation {
   card: NonNullable<NonNullable<GameState['lastEvent']>['card']>;
   playerId: string;
   phase: PendingDrawPhase;
+  eventKind: NonNullable<GameState['lastEvent']>['kind'];
 }
 
 export const DRAW_SPAWN_DELAY_MS = 20;
 export const DRAW_FLIP_DURATION_MS = 400;
 export const DRAW_FACE_UP_HOLD_MS = 700;
 export const DRAW_TRAVEL_DURATION_MS = 650;
+export const DRAW_FADE_DURATION_MS = 500;
 export const NON_CARD_EVENT_DELAY_MS = 700;
 
 const DRAW_EVENT_KINDS = new Set([
@@ -33,6 +35,7 @@ export function getPendingDrawAnimation(state: GameState): PendingDrawAnimation 
     card: event.card,
     playerId: event.playerId,
     phase: 'spawn',
+    eventKind: event.kind,
   };
 }
 
@@ -56,8 +59,17 @@ export function runPendingDrawAnimation(
       });
 
       setTimeout(() => {
-        setPendingDrawAnimation(null);
-        onComplete();
+        // If it's a second chance card, add a fade phase
+        if (animation.eventKind === 'second_chance_used') {
+          setPendingDrawAnimation({ ...animation, phase: 'fade' });
+          setTimeout(() => {
+            setPendingDrawAnimation(null);
+            onComplete();
+          }, DRAW_FADE_DURATION_MS);
+        } else {
+          setPendingDrawAnimation(null);
+          onComplete();
+        }
       }, DRAW_TRAVEL_DURATION_MS);
     }, DRAW_FLIP_DURATION_MS + DRAW_FACE_UP_HOLD_MS);
   }, DRAW_SPAWN_DELAY_MS);

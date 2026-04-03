@@ -42,6 +42,7 @@ function PlayerHand({
   numberRowRef,
   cardsAreaRef,
   incomingSlotRef,
+  lastEvent,
 }: {
   player: PlayerState;
   isActive: boolean;
@@ -49,6 +50,7 @@ function PlayerHand({
   numberRowRef?: (node: HTMLDivElement | null) => void;
   cardsAreaRef?: (node: HTMLDivElement | null) => void;
   incomingSlotRef?: (node: HTMLDivElement | null) => void;
+  lastEvent?: { kind: string; card?: { id: string } };
 }) {
   const roundScore = calculateRoundScore(player);
   const shouldOmitPendingCard = pendingDrawAnimation?.playerId === player.id;
@@ -83,18 +85,34 @@ function PlayerHand({
 
   return (
     <motion.div 
+      initial={false}
       animate={
-        player.status === 'busted' ? { x: [-10, 10, -10, 10, 0], opacity: 0.6 } :
-        isFlip7 ? { scale: [1, 1.05, 1], boxShadow: ['0 0 0px var(--primary)', '0 0 30px var(--primary)', '0 0 10px var(--primary)'] } :
+        player.status === 'busted' ? { 
+          x: [0, -10, 10, -10, 10, 0],
+          transition: { duration: 0.5 } 
+        } :
+        player.status === 'frozen' ? {
+          x: [0, -5, 5, -5, 5, 0],
+          transition: { duration: 0.4 }
+        } :
+        isFlip7 ? { 
+          scale: [1, 1.02, 1], 
+          boxShadow: ['0 0 0px var(--primary)', '0 0 30px var(--primary)', '0 0 10px var(--primary)'],
+          transition: { duration: 2, repeat: Infinity }
+        } :
         { opacity: 1, x: 0, scale: 1 }
       }
-      transition={{ duration: 0.5 }}
       style={{
         background: isActive ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
         borderRadius: 'var(--radius-lg)',
         padding: 'var(--space-4)',
-        border: isActive ? '2px solid var(--primary)' : '1px solid transparent',
-        transition: 'background 0.3s ease, border 0.3s ease',
+        border: player.actionCards.some(c => c.action === 'second_chance') 
+          ? '2px solid #4ade80' 
+          : (isActive ? '2px solid var(--primary)' : '1px solid var(--outline-variant)'),
+        boxShadow: player.actionCards.some(c => c.action === 'second_chance')
+          ? '0 0 15px rgba(74, 222, 128, 0.3), inset 0 0 10px rgba(74, 222, 128, 0.1)'
+          : 'none',
+        transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease',
         display: 'flex',
         flexDirection: 'column',
         gap: 'var(--space-3)',
@@ -103,6 +121,30 @@ function PlayerHand({
         overflow: 'hidden',
       }}
     >
+      {/* Second Chance Border Sweep */}
+      {player.actionCards.some(c => c.action === 'second_chance') && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          padding: 2,
+          borderRadius: 'inherit',
+          pointerEvents: 'none',
+          zIndex: 1,
+          WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+          WebkitMaskComposite: 'xor',
+          maskComposite: 'exclude',
+        }}>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+            style={{
+              position: 'absolute',
+              inset: '-150%',
+              background: 'conic-gradient(from 0deg, transparent 20%, #4ade80 50%, transparent 80%)',
+            }}
+          />
+        </div>
+      )}
       {/* Freeze Overlay */}
       <AnimatePresence>
         {player.status === 'frozen' && (
@@ -182,11 +224,13 @@ function PlayerHand({
                 initial={false}
                 animate={{ 
                   opacity: 1,
-                  rotateZ: player.status === 'frozen' ? 90 : 0
+                  rotateZ: player.status === 'frozen' ? 90 : 0,
+                  y: isFlip7 ? [0, -15, 15, 0] : 0
                 }}
                 transition={{ 
                   type: 'spring', stiffness: 260, damping: 16, mass: 0.85,
-                  rotateZ: { type: 'spring', delay: player.status === 'frozen' ? i * 0.3 : 0 }
+                  rotateZ: { type: 'spring', delay: player.status === 'frozen' ? i * 0.15 : 0 },
+                  y: isFlip7 ? { repeat: Infinity, duration: 1.5, delay: i * 0.1, ease: "easeInOut" } : {}
                 }}
                 style={{ 
                   marginLeft: i === 0 ? '0px' : `min(0.5rem, ${overlapSpace})`,
@@ -200,6 +244,7 @@ function PlayerHand({
                   card={c}
                   status={player.status === 'active' ? undefined : player.status}
                   disableIntroAnimation
+                  isBustCard={player.status === 'busted' && c.id === lastEvent?.card?.id}
                 />
               </motion.div>
             )})
@@ -345,7 +390,16 @@ export function Game() {
 
     let destination = source;
 
-    if (pendingDrawAnimation.card.type === 'number') {
+    if (pendingDrawAnimation.eventKind === 'second_chance_used') {
+      const handAreaRect = cardsAreaRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
+      if (handAreaRect) {
+        // Target OUTSIDE the hand area (above it)
+        destination = {
+          x: handAreaRect.left + (handAreaRect.width - CARD_WIDTH) / 2,
+          y: handAreaRect.top - CARD_HEIGHT - 40, 
+        };
+      }
+    } else if (pendingDrawAnimation.card.type === 'number') {
       const incomingSlotRect = incomingSlotRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
       if (incomingSlotRect) {
         destination = {
@@ -368,8 +422,8 @@ export function Game() {
       const handAreaRect = cardsAreaRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
       if (handAreaRect) {
         destination = {
-          x: handAreaRect.left,
-          y: handAreaRect.top,
+          x: handAreaRect.left + (handAreaRect.width - CARD_WIDTH) / 2,
+          y: handAreaRect.top + (handAreaRect.height - CARD_HEIGHT) / 2,
         };
       }
     }
@@ -486,6 +540,7 @@ export function Game() {
                 numberRowRef={registerNumberRowRef(ai.id)}
                 cardsAreaRef={registerCardsAreaRef(ai.id)}
                 incomingSlotRef={registerIncomingSlotRef(ai.id)}
+                lastEvent={gameState.lastEvent ?? undefined}
               />
             ))}
           </div>
@@ -563,6 +618,7 @@ export function Game() {
               numberRowRef={registerNumberRowRef(humanPlayer.id)}
               cardsAreaRef={registerCardsAreaRef(humanPlayer.id)}
               incomingSlotRef={registerIncomingSlotRef(humanPlayer.id)}
+              lastEvent={gameState.lastEvent ?? undefined}
             />
           </div>
         )}
@@ -572,14 +628,17 @@ export function Game() {
         <motion.div
           initial={false}
           animate={{
-            x: pendingDrawAnimation.phase === 'travel' ? floatingCardMetrics.destination.x : floatingCardMetrics.source.x,
-            y: pendingDrawAnimation.phase === 'travel' ? floatingCardMetrics.destination.y : floatingCardMetrics.source.y,
+            x: (pendingDrawAnimation.phase === 'travel' || pendingDrawAnimation.phase === 'fade') ? floatingCardMetrics.destination.x : floatingCardMetrics.source.x,
+            y: (pendingDrawAnimation.phase === 'travel' || pendingDrawAnimation.phase === 'fade') ? floatingCardMetrics.destination.y : floatingCardMetrics.source.y,
             rotate: 0,
             scale: pendingDrawAnimation.phase === 'spawn' ? 0.985 : 1,
+            opacity: pendingDrawAnimation.phase === 'fade' ? 0 : 1,
           }}
           transition={
             pendingDrawAnimation.phase === 'travel'
               ? { type: 'tween', duration: 0.56, ease: [0.22, 0.8, 0.2, 1] }
+              : pendingDrawAnimation.phase === 'fade'
+              ? { duration: 0.5 }
               : { type: 'spring', stiffness: 280, damping: 22, mass: 0.82 }
           }
           style={{

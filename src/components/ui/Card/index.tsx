@@ -12,6 +12,7 @@ interface CardProps {
   status?: PlayerType['status'];
   disableIntroAnimation?: boolean;
   flipOrigin?: CSSProperties['transformOrigin'];
+  isBustCard?: boolean;
 }
 
 export function Card({
@@ -23,6 +24,7 @@ export function Card({
   status,
   disableIntroAnimation = false,
   flipOrigin = 'center center',
+  isBustCard = false,
 }: CardProps) {
   // Dimensions and base styling
   const baseStyle: CSSProperties = {
@@ -85,7 +87,7 @@ export function Card({
   const isBusted = status === 'busted';
   const isFrozen = status === 'frozen';
   
-  const faceFilter = isBusted ? 'sepia(1) hue-rotate(-50deg) saturate(5)' : isFrozen ? 'sepia(1) hue-rotate(180deg) saturate(3)' : undefined;
+  const faceFilter = (isBusted || isBustCard) ? 'sepia(1) hue-rotate(-50deg) saturate(5)' : undefined;
   
   if (card.type === 'number') {
     content = (
@@ -157,11 +159,13 @@ export function Card({
       initial={disableIntroAnimation ? false : { scale: 0.5, opacity: 0 }}
       animate={
         disableIntroAnimation
-          ? { boxShadow: isBusted ? '0 0 15px var(--error)' : 'var(--shadow-float)' }
+          ? { 
+              boxShadow: (isBusted || isBustCard) ? '0 0 15px var(--error)' : 'var(--shadow-float)',
+            }
           : {
               scale: 1,
               opacity: 1,
-              boxShadow: isBusted ? '0 0 15px var(--error)' : 'var(--shadow-float)',
+              boxShadow: (isBusted || isBustCard) ? '0 0 15px var(--error)' : 'var(--shadow-float)',
             }
       }
       transition={
@@ -189,9 +193,9 @@ export function Card({
           style={{
             position: 'absolute',
             inset: 0,
-            background: bg,
+            background: (isBusted || isBustCard) ? 'var(--error-container)' : bg,
             borderRadius: 'var(--radius-md)',
-            border: isBusted ? '2px solid var(--error)' : '1px solid var(--outline-variant)',
+            border: (isBusted || isBustCard) ? '2px solid var(--error)' : '1px solid var(--outline-variant)',
             backfaceVisibility: 'hidden',
             display: 'flex',
             flexDirection: 'column',
@@ -202,6 +206,68 @@ export function Card({
             zIndex: isFaceDown ? 0 : 1
           }}
         >
+          {/* Advanced Freeze Overlay */}
+          <motion.div
+            initial={false}
+            animate={{ 
+              opacity: isFrozen ? 0.95 : 0,
+              backgroundSize: isFrozen 
+                ? '100% 60%, 60% 100%, 100% 30%, 30% 100%' 
+                : '100% 0%, 0% 100%, 100% 0%, 0% 100%'
+            }}
+            transition={{ 
+              backgroundSize: { duration: 1.1, ease: 'easeOut' },
+              opacity: { duration: 0.5 }
+            }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              zIndex: 2,
+              backgroundImage: `
+                linear-gradient(to bottom, rgba(220,240,255,0.85), transparent),
+                linear-gradient(to right, rgba(220,240,255,0.8), transparent),
+                linear-gradient(to top, rgba(220,240,255,0.5), transparent),
+                linear-gradient(to left, rgba(220,240,255,0.6), transparent)
+              `,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'top left, top left, bottom right, bottom right',
+              filter: 'blur(4px)',
+              WebkitMaskImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`,
+              maskImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`,
+            }}
+          />
+
+          {/* Ice texture */}
+          <motion.div
+            initial={false}
+            animate={{ opacity: isFrozen ? 0.4 : 0 }}
+            transition={{ duration: 1, delay: isFrozen ? 0.6 : 0 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              zIndex: 3,
+              backgroundImage: "url('https://images.unsplash.com/photo-1577481759269-e704c1871a26')",
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              mixBlendMode: 'screen',
+            }}
+          />
+
+          {/* Shine Sweep */}
+          <motion.div
+            initial={false}
+            animate={{ x: isFrozen ? '100%' : '-100%' }}
+            transition={{ duration: 1.2, delay: isFrozen ? 1.2 : 0, ease: 'easeInOut' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              zIndex: 4,
+              background: 'linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4), transparent 70%)',
+            }}
+          />
           {/* Corner index (top left) */}
           <div style={{
             position: 'absolute',
@@ -210,7 +276,7 @@ export function Card({
             fontFamily: 'var(--font-display)',
             fontSize: '0.75rem',
             fontWeight: 700,
-            color: card.type === 'number' ? (isBusted ? 'var(--error)' : 'var(--primary)') : 
+            color: card.type === 'number' ? ((isBusted || isBustCard) ? 'var(--on-surface)' : 'var(--primary)') : 
                    card.type === 'action' ? 'var(--secondary)' : 'var(--tertiary)'
           }}>
             {card.type === 'number' ? card.value : ''}
