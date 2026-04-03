@@ -14,18 +14,41 @@ class NetworkManager {
   private connections: Map<string, DataConnection> = new Map();
   private isHost: boolean = true;
   private onMessageCallback: MessageHandler | null = null;
+  private onConnectionReadyCallback: ((clientId: string) => void) | null = null;
+
+  onConnectionReady(callback: (clientId: string) => void) {
+    this.onConnectionReadyCallback = callback;
+  }
+
+  getOpenConnectionCount(): number {
+    let count = 0;
+    this.connections.forEach(conn => {
+      if (conn.open) count++;
+    });
+    return count;
+  }
 
   initHost(
     onReady: (roomId: string) => void,
     onClientJoined?: (clientId: string, name: string) => void,
-    onClientLeft?: (clientId: string) => void
+    onClientLeft?: (clientId: string) => void,
+    onError?: (err: any) => void
   ) {
     this.isHost = true;
     // Generate a random 4-6 character room code
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    // Explicitly configure PeerJS with debugging enabled
-    this.peer = new Peer(`flippit-${roomId}`, { debug: 2 });
+    // Explicitly configure PeerJS with public STUN servers for NAT traversal
+    this.peer = new Peer(`flippit-${roomId}`, {
+      debug: 2,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      }
+    });
 
     this.peer.on('open', () => {
       console.log(`[Host] Peer open. Room ID: ${roomId}`);
@@ -34,14 +57,22 @@ class NetworkManager {
 
     this.peer.on('error', (err) => {
       console.error('[Host] PeerJS Error:', err);
+      if (onError) {
+        onError(err);
+      }
     });
 
     this.peer.on('connection', (conn) => {
       console.log(`[Host] Incoming connection from ${conn.peer}`);
+      // Add to connections map immediately, even before open
+      this.connections.set(conn.peer, conn);
 
       conn.on('open', () => {
         console.log(`[Host] Connection opened with ${conn.peer}`);
-        this.connections.set(conn.peer, conn);
+        // Notify that connection is ready
+        if (this.onConnectionReadyCallback) {
+          this.onConnectionReadyCallback(conn.peer);
+        }
       });
 
       conn.on('data', (data) => {
@@ -75,7 +106,16 @@ class NetworkManager {
 
   joinRoom(roomId: string, playerName: string, onConnected: () => void, onError: (err: any) => void) {
     this.isHost = false;
-    this.peer = new Peer({ debug: 2 }); // Client gets a random ID
+    this.peer = new Peer({
+      debug: 2,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      }
+    }); // Client gets a random ID
 
     let connectionTimeout: any;
 

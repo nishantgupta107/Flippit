@@ -15,13 +15,16 @@ export function MultiplayerLobby() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [joinError, setJoinError] = useState('');
 
-  const [connectedPlayers, setConnectedPlayers] = useState<{id: string, name: string}[]>([]);
+  const [connectedPlayers, setConnectedPlayers] = useState<{id: string, name: string, isReady?: boolean}[]>([]);
+  const [hostError, setHostError] = useState('');
+  const [readyConnections, setReadyConnections] = useState<Set<string>>(new Set());
 
   const setHostStatus = useGameStore(s => s.setHostStatus);
   const startMultiplayerGame = useGameStore(s => s.startMultiplayerGame);
 
   const handleHost = () => {
     setIsConnecting(true);
+    setHostError('');
     setHostStatus(true);
 
     const hostName = getPlayerName();
@@ -30,13 +33,26 @@ export function MultiplayerLobby() {
       setIsConnecting(false);
       setRoomId(id);
       setLobbyState('host_lobby');
-      setConnectedPlayers([{ id: 'human', name: hostName }]); // Add self to list
+      setConnectedPlayers([{ id: 'human', name: hostName, isReady: true }]);
+      // Set up connection ready tracking
+      networkManager.onConnectionReady((clientId) => {
+        setReadyConnections(prev => new Set(prev).add(clientId));
+      });
     }, (clientId, clientName) => {
-      // Add client to the list when they join
-      setConnectedPlayers(prev => [...prev, { id: clientId, name: clientName }]);
+      setConnectedPlayers(prev => [...prev, { id: clientId, name: clientName, isReady: false }]);
     }, (clientId) => {
-      // Remove client when they leave
       setConnectedPlayers(prev => prev.filter(p => p.id !== clientId));
+      setReadyConnections(prev => {
+        const next = new Set(prev);
+        next.delete(clientId);
+        return next;
+      });
+    }, (err) => {
+      // Handle host creation error
+      setIsConnecting(false);
+      setHostStatus(false);
+      setHostError('Failed to create room. Please check your network connection and try again.');
+      console.error(err);
     });
   };
 
@@ -118,6 +134,7 @@ export function MultiplayerLobby() {
             <p style={{ color: 'var(--on-surface-variant)' }}>
               Create a room and share the code with a friend on the same network.
             </p>
+            {hostError && <p style={{ color: 'var(--error)' }}>{hostError}</p>}
             <Button onClick={handleHost} disabled={isConnecting}>
               {isConnecting ? 'Creating...' : 'Create Room'}
             </Button>
@@ -194,20 +211,36 @@ export function MultiplayerLobby() {
           </div>
 
           <div style={{ width: '100%', marginTop: 'var(--space-4)' }}>
-            <h3 style={{ fontSize: '1.1rem', marginBottom: 'var(--space-2)' }}>Connected Players ({connectedPlayers.length})</h3>
+            <h3 style={{ fontSize: '1.1rem', marginBottom: 'var(--space-2)' }}>
+              Connected Players ({connectedPlayers.length}) 
+              {readyConnections.size > 0 && <span style={{ color: 'var(--primary)', fontSize: '0.9rem' }}> ({readyConnections.size} ready)</span>}
+            </h3>
             <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {connectedPlayers.map(p => (
-                <li key={p.id} style={{ padding: '0.75rem', background: 'var(--surface-container-highest)', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between' }}>
+                <li key={p.id} style={{ padding: '0.75rem', background: 'var(--surface-container-highest)', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>{p.name}</span>
-                  {p.id === 'human' && <span style={{ color: 'var(--primary)' }}>(You)</span>}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {p.id === 'human' && <span style={{ color: 'var(--primary)' }}>(You)</span>}
+                    {p.id !== 'human' && (
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        padding: '0.25rem 0.5rem', 
+                        borderRadius: 'var(--radius-sm)',
+                        background: readyConnections.has(p.id) ? 'var(--primary-container)' : 'var(--surface-variant)',
+                        color: readyConnections.has(p.id) ? 'var(--on-primary-container)' : 'var(--on-surface-variant)'
+                      }}>
+                        {readyConnections.has(p.id) ? 'Ready' : 'Connecting...'}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
           </div>
 
           <div style={{ marginTop: 'auto', width: '100%' }}>
-            <Button style={{ width: '100%' }} onClick={startGame} disabled={connectedPlayers.length < 2}>
-              Start Game
+            <Button style={{ width: '100%' }} onClick={startGame} disabled={readyConnections.size === 0}>
+              {readyConnections.size === 0 ? 'Waiting for connections...' : 'Start Game'}
             </Button>
           </div>
         </section>

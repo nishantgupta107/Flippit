@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { GameState, Difficulty } from '../engine/types';
 import {
   initGame,
+  initMultiplayerGame,
   startRound,
   humanHit,
   humanStay,
@@ -58,10 +59,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     logUserAction('START_MULTIPLAYER_GAME', { players });
 
     // We'll map the provided players to the engine
-    const { initMultiplayerGame } = require('../engine/game');
     const initial = initMultiplayerGame(players);
     logGameEvent('GAME_INITIALIZED', { playerCount: initial.players.length, dealerIndex: initial.dealerIndex }, initial);
     const afterDeal = startRound(initial);
+    
+    // Set the game state immediately so host can navigate
+    set({ gameState: afterDeal, isAIThinking: true });
+    
+    // Broadcast initial state to all connected clients immediately
+    const store = get();
+    if (store.isHost) {
+      networkManager.broadcastState(afterDeal);
+    }
+    
     performDealSequence(afterDeal, set, get);
   },
 
