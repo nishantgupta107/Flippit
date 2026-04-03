@@ -8,8 +8,8 @@ function apiRoutesPlugin() {
     configureServer(server: any) {
       server.middlewares.use('/api/dump-logs', (req: any, res: any, next: any) => {
         if (req.method === 'POST') {
-          const { dumpLogsHandler } = require('./api/dumpLogs');
-          dumpLogsHandler(req, res);
+          const handler = require('./api/dump-logs');
+          handler(req, res);
         } else {
           next();
         }

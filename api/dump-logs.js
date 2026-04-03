@@ -48,65 +48,82 @@ function formatLogEntryText(entry) {
 }
 
 function handler(req, res) {
+  // Helper for compatibility between Vercel and local Node.js server
+  const sendJson = (status, obj) => {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(obj));
+  };
+
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
+    sendJson(405, { error: 'Method not allowed' });
     return;
   }
 
-  // Vercel pre-parses JSON body in req.body
-  const data = req.body || {};
-  const logs = data.logs || [];
-  const timestamp = data.timestamp || Date.now();
-  
-  if (logs.length === 0) {
-    res.status(400).json({ error: 'No logs provided' });
-    return;
-  }
+  // Local development might not pre-parse the body
+  let getBody = () => {
+    if (req.body) return Promise.resolve(req.body);
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          resolve({});
+        }
+      });
+      req.on('error', reject);
+    });
+  };
 
-  try {
-    const filenameBase = formatTimestamp(timestamp);
+  getBody().then(data => {
+    const logs = data.logs || [];
+    const timestamp = data.timestamp || Date.now();
     
-    // Note: Vercel serverless functions have a read-only filesystem except for /tmp
-    // This part will fail in production if DUMPS_DIR is not correctly configured
-    // We try/catch it so the function still succeeds 200 (logs are received at least)
-    try {
-      if (!fs.existsSync(DUMPS_DIR)) {
-        fs.mkdirSync(DUMPS_DIR, { recursive: true });
-      }
-
-      // Write JSON file
-      const jsonPath = path.join(DUMPS_DIR, `events-${filenameBase}.json`);
-      fs.writeFileSync(jsonPath, JSON.stringify(logs, null, 2));
-      
-      // Write text file
-      const textPath = path.join(DUMPS_DIR, `events-${filenameBase}.txt`);
-      const textContent = logs.map(formatLogEntryText).join('\n\n');
-      fs.writeFileSync(textPath, textContent);
-      
-      res.status(200).json({ 
-        success: true, 
-        count: logs.length,
-        persisted: true,
-        files: [
-          `events-${filenameBase}.json`,
-          `events-${filenameBase}.txt`
-        ]
-      });
-    } catch (fsError) {
-      console.warn('Filesystem write failed (expected on Vercel):', fsError.message);
-      // In production, we just log that we received them but couldn't save to disk
-      res.status(200).json({ 
-        success: true, 
-        count: logs.length,
-        persisted: false,
-        message: 'Logs received, but filesystem is read-only. Consider using a DB for persistent logs.'
-      });
+    if (logs.length === 0) {
+      sendJson(400, { error: 'No logs provided' });
+      return;
     }
 
-  } catch (error) {
-    console.error('Error processing logs:', error);
-    res.status(500).json({ error: 'Failed to process logs: ' + error.message });
-  }
+    try {
+      const filenameBase = formatTimestamp(timestamp);
+      
+      try {
+        if (!fs.existsSync(DUMPS_DIR)) {
+          fs.mkdirSync(DUMPS_DIR, { recursive: true });
+        }
+
+        // Write files
+        const jsonPath = path.join(DUMPS_DIR, `events-${filenameBase}.json`);
+        fs.writeFileSync(jsonPath, JSON.stringify(logs, null, 2));
+        
+        const textPath = path.join(DUMPS_DIR, `events-${filenameBase}.txt`);
+        const textContent = logs.map(formatLogEntryText).join('\n\n');
+        fs.writeFileSync(textPath, textContent);
+        
+        sendJson(200, { 
+          success: true, 
+          count: logs.length,
+          persisted: true,
+          files: [`events-${filenameBase}.json`, `events-${filenameBase}.txt`]
+        });
+      } catch (fsError) {
+        console.warn('Filesystem write failed:', fsError.message);
+        sendJson(200, { 
+          success: true, 
+          count: logs.length,
+          persisted: false,
+          message: 'Logs received, but filesystem is read-only.'
+        });
+      }
+    } catch (error) {
+      console.error('Error processing logs:', error);
+      sendJson(500, { error: 'Failed to process logs: ' + error.message });
+    }
+  }).catch(err => {
+    sendJson(500, { error: 'Internal Server Error' });
+  });
 }
 
 module.exports = handler;

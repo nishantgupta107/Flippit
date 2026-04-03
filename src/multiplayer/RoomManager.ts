@@ -27,8 +27,12 @@ export class RoomManager {
       this.socket.close();
     }
 
-    // PartyKit host (can be from env)
-    const host = window.location.hostname === "localhost" ? "localhost:1999" : window.location.host;
+    // Priority: 1. Env Var, 2. Localhost, 3. Current Host (fallback)
+    let host = import.meta.env.VITE_PARTYKIT_HOST;
+    
+    if (!host) {
+      host = window.location.hostname === "localhost" ? "localhost:1999" : window.location.host;
+    }
 
     this.socket = new PartySocket({
       host,
