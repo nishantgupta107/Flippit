@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
@@ -14,6 +14,10 @@ import type { PendingDrawAnimation } from '../../store/drawAnimation';
 const CARD_WIDTH = 80;
 const CARD_HEIGHT = 112;
 const MAX_CARD_SPACING = 8;
+const FREEZE_SHAKE_DURATION_MS = 900;
+const BUST_WAVE_STEP_MS = 120;
+const BUST_CARD_TINT_DURATION_MS = 220;
+const BUST_SHAKE_DURATION_MS = 520;
 
 interface FloatingCardPosition {
   x: number;
@@ -33,6 +37,19 @@ function getCardSpacing(containerWidth: number, totalCards: number): number {
   return Math.min(MAX_CARD_SPACING, (containerWidth - totalCards * CARD_WIDTH) / (totalCards - 1));
 }
 
+function getInsertionIndex(cards: PlayerState['numberCards'], value?: number): number {
+  if (typeof value !== 'number') {
+    return cards.length;
+  }
+
+  return cards.filter((card) => (card.value ?? Number.NEGATIVE_INFINITY) <= value).length;
+}
+
+function getCardDestinationX(rowWidth: number, totalCards: number, cardIndex: number): number {
+  const spacing = getCardSpacing(rowWidth, totalCards);
+  return Math.max(cardIndex, 0) * spacing;
+}
+
 // ─── Player Hand View ─────────────────────────────────────────────────────────
 
 function PlayerHand({
@@ -50,9 +67,91 @@ function PlayerHand({
   numberRowRef?: (node: HTMLDivElement | null) => void;
   cardsAreaRef?: (node: HTMLDivElement | null) => void;
   incomingSlotRef?: (node: HTMLDivElement | null) => void;
-  lastEvent?: { kind: string; card?: { id: string } };
+  lastEvent?: { kind: string; playerId: string; card?: { id: string } };
 }) {
+  const [isFreezeBurstActive, setIsFreezeBurstActive] = useState(false);
+  const [hasBustWaveStarted, setHasBustWaveStarted] = useState(false);
+  const [isBustShakeActive, setIsBustShakeActive] = useState(false);
+  const [isSecondChanceExitActive, setIsSecondChanceExitActive] = useState(false);
   const roundScore = calculateRoundScore(player);
+  const hasSecondChance = player.actionCards.some((c) => c.action === 'second_chance');
+  const isFrozen = player.status === 'frozen';
+  const isBusted = player.status === 'busted';
+  const isFlip7 = new Set(player.numberCards.map(c => c.value)).size >= 7;
+  const isNewBustEvent = lastEvent?.kind === 'bust' && lastEvent.playerId === player.id;
+  const duplicateCardIndex = isNewBustEvent
+    ? player.numberCards.findIndex((card) => card.id === lastEvent.card?.id)
+    : -1;
+  const maxBustDistance = duplicateCardIndex >= 0
+    ? Math.max(...player.numberCards.map((_, index) => Math.abs(index - duplicateCardIndex)))
+    : 0;
+  const bustSpreadDurationMs = maxBustDistance * BUST_WAVE_STEP_MS + BUST_CARD_TINT_DURATION_MS;
+  const isPendingBustArrival =
+    pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.eventKind === 'bust';
+  const isPendingSecondChanceExit =
+    pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.eventKind === 'second_chance_used';
+  const shouldShowSecondChanceBorder = hasSecondChance || isSecondChanceExitActive;
+
+  useEffect(() => {
+    if (isPendingSecondChanceExit) {
+      setIsSecondChanceExitActive(true);
+      return;
+    }
+
+    if (!hasSecondChance) {
+      setIsSecondChanceExitActive(false);
+    }
+  }, [hasSecondChance, isPendingSecondChanceExit]);
+
+  useEffect(() => {
+    if (lastEvent?.kind !== 'freeze' || lastEvent.playerId !== player.id) {
+      return;
+    }
+
+    setIsFreezeBurstActive(true);
+    const timeoutId = window.setTimeout(() => {
+      setIsFreezeBurstActive(false);
+    }, FREEZE_SHAKE_DURATION_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [lastEvent?.kind, lastEvent?.playerId, player.id]);
+
+  useEffect(() => {
+    if (!isBusted) {
+      setHasBustWaveStarted(false);
+      setIsBustShakeActive(false);
+      return;
+    }
+
+    if (!isNewBustEvent) {
+      setHasBustWaveStarted(true);
+      setIsBustShakeActive(false);
+      return;
+    }
+
+    if (isPendingBustArrival) {
+      setHasBustWaveStarted(false);
+      setIsBustShakeActive(false);
+      return;
+    }
+
+    setHasBustWaveStarted(true);
+    setIsBustShakeActive(false);
+
+    const shakeTimeoutId = window.setTimeout(() => {
+      setIsBustShakeActive(true);
+    }, bustSpreadDurationMs);
+
+    const cleanupTimeoutId = window.setTimeout(() => {
+      setIsBustShakeActive(false);
+    }, bustSpreadDurationMs + BUST_SHAKE_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(shakeTimeoutId);
+      window.clearTimeout(cleanupTimeoutId);
+    };
+  }, [bustSpreadDurationMs, isBusted, isNewBustEvent, isPendingBustArrival]);
+
   const shouldOmitPendingCard = pendingDrawAnimation?.playerId === player.id;
   const displayedNumberCards = shouldOmitPendingCard
     ? player.numberCards.filter((card) => card.id !== pendingDrawAnimation.card.id)
@@ -81,37 +180,54 @@ function PlayerHand({
     player.status === 'stayed' ? '🏦' :
     player.status === 'busted' ? '💥' : '❄️';
 
-  const isFlip7 = new Set(player.numberCards.map(c => c.value)).size >= 7;
-
   return (
     <motion.div 
       initial={false}
       animate={
-        player.status === 'busted' ? { 
-          x: [0, -10, 10, -10, 10, 0],
-          transition: { duration: 0.5 } 
-        } :
-        player.status === 'frozen' ? {
-          x: [0, -5, 5, -5, 5, 0],
-          transition: { duration: 0.4 }
-        } :
-        isFlip7 ? { 
-          scale: [1, 1.02, 1], 
-          boxShadow: ['0 0 0px var(--primary)', '0 0 30px var(--primary)', '0 0 10px var(--primary)'],
-          transition: { duration: 2, repeat: Infinity }
-        } :
-        { opacity: 1, x: 0, scale: 1 }
+        isBustShakeActive ? {
+          x: [0, -10, 10, -8, 8, -4, 0],
+          y: [0, 1, -1, 1, 0],
+          boxShadow: '0 0 14px rgba(215, 56, 59, 0.34)',
+        } : isFreezeBurstActive ? {
+          x: [2, -2, 2, -1, 1, 0],
+          y: [2, 0, -1, 2, 0],
+        } : isFlip7 ? {
+          scale: [1, 1.02, 1],
+          boxShadow: ['0 0 0px var(--primary)', '0 0 30px var(--primary)', '0 0 10px var(--primary)']
+        } : shouldShowSecondChanceBorder ? {
+          boxShadow: [
+            '0 0 0 rgba(74, 222, 128, 0.2), inset 0 0 0 rgba(74, 222, 128, 0.08)',
+            '0 0 18px rgba(134, 239, 172, 0.55), inset 0 0 12px rgba(74, 222, 128, 0.16)',
+            '0 0 6px rgba(74, 222, 128, 0.28), inset 0 0 4px rgba(74, 222, 128, 0.08)'
+          ],
+          borderColor: ['#86efac', '#bbf7d0', '#86efac']
+        } : {
+          boxShadow: 'none',
+          borderColor: isActive ? 'var(--primary)' : 'var(--outline-variant)'
+        }
+      }
+      transition={
+        isBustShakeActive
+          ? {
+              duration: BUST_SHAKE_DURATION_MS / 1000,
+              ease: [0.22, 0.8, 0.2, 1],
+              times: [0, 0.2, 0.38, 0.56, 0.74, 0.88, 1],
+            }
+          : isFreezeBurstActive
+          ? { duration: FREEZE_SHAKE_DURATION_MS / 1000, ease: 'linear' }
+          : isFlip7
+          ? { duration: 2, repeat: Infinity }
+          : shouldShowSecondChanceBorder
+          ? { duration: 1.9, repeat: Infinity, ease: 'easeInOut' }
+          : { duration: 0.3, ease: 'easeOut' }
       }
       style={{
         background: isActive ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
         borderRadius: 'var(--radius-lg)',
         padding: 'var(--space-4)',
-        border: player.actionCards.some(c => c.action === 'second_chance') 
-          ? '2px solid #4ade80' 
+        border: shouldShowSecondChanceBorder
+          ? '2px solid #86efac'
           : (isActive ? '2px solid var(--primary)' : '1px solid var(--outline-variant)'),
-        boxShadow: player.actionCards.some(c => c.action === 'second_chance')
-          ? '0 0 15px rgba(74, 222, 128, 0.3), inset 0 0 10px rgba(74, 222, 128, 0.1)'
-          : 'none',
         transition: 'background 0.3s ease, border 0.3s ease, box-shadow 0.3s ease',
         display: 'flex',
         flexDirection: 'column',
@@ -121,33 +237,8 @@ function PlayerHand({
         overflow: 'hidden',
       }}
     >
-      {/* Second Chance Border Sweep */}
-      {player.actionCards.some(c => c.action === 'second_chance') && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          padding: 2,
-          borderRadius: 'inherit',
-          pointerEvents: 'none',
-          zIndex: 1,
-          WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-          WebkitMaskComposite: 'xor',
-          maskComposite: 'exclude',
-        }}>
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-            style={{
-              position: 'absolute',
-              inset: '-150%',
-              background: 'conic-gradient(from 0deg, transparent 20%, #4ade80 50%, transparent 80%)',
-            }}
-          />
-        </div>
-      )}
-      {/* Freeze Overlay */}
       <AnimatePresence>
-        {player.status === 'frozen' && (
+        {isFrozen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -155,17 +246,94 @@ function PlayerHand({
             style={{
               position: 'absolute',
               inset: 0,
-              background: 'rgba(104, 211, 255, 0.1)',
+              zIndex: 20,
+              pointerEvents: 'none',
+              borderRadius: 'inherit',
+              overflow: 'hidden',
               backdropFilter: 'blur(2px)',
-              zIndex: 10,
-              pointerEvents: 'none'
             }}
-          />
+          >
+            <motion.div
+              initial={false}
+              animate={{
+                x: isFreezeBurstActive ? [2, -2, 2, -1, 1, 0] : 0,
+                y: isFreezeBurstActive ? [2, 0, -1, 2, 0] : 0,
+              }}
+              transition={{
+                duration: FREEZE_SHAKE_DURATION_MS / 1000,
+                ease: 'linear',
+              }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(104, 211, 255, 0.12)',
+                }}
+              />
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: 0.95,
+                  backgroundSize: '100% 60%, 60% 100%, 100% 30%, 30% 100%',
+                }}
+                transition={{
+                  backgroundSize: { duration: 1.1, ease: 'easeOut' },
+                  opacity: { duration: 0.5 },
+                }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundImage: `
+                    linear-gradient(to bottom, rgba(220,240,255,0.85), transparent),
+                    linear-gradient(to right, rgba(220,240,255,0.8), transparent),
+                    linear-gradient(to top, rgba(220,240,255,0.5), transparent),
+                    linear-gradient(to left, rgba(220,240,255,0.6), transparent)
+                  `,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'top left, top left, bottom right, bottom right',
+                  filter: 'blur(6px)',
+                  WebkitMaskImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`,
+                  maskImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`,
+                }}
+              />
+              <motion.div
+                initial={false}
+                animate={{ opacity: 0.6 }}
+                transition={{ duration: 1, delay: 0.6 }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundImage: `
+                    radial-gradient(circle at 20% 25%, rgba(255,255,255,0.45), transparent 28%),
+                    radial-gradient(circle at 78% 22%, rgba(255,255,255,0.28), transparent 18%),
+                    radial-gradient(circle at 60% 70%, rgba(180, 229, 255, 0.22), transparent 24%),
+                    repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 8px, transparent 8px 18px)
+                  `,
+                  mixBlendMode: 'screen',
+                }}
+              />
+              <motion.div
+                initial={{ x: '-100%' }}
+                animate={{ x: '100%' }}
+                transition={{ duration: 1.2, delay: 1.2, ease: 'easeInOut' }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.55), transparent 70%)',
+                }}
+              />
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 11 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 11, position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <span style={{ fontSize: '1.25rem' }}>{statusEmoji}</span>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{player.name}</span>
@@ -177,7 +345,14 @@ function PlayerHand({
       {/* Cards Area */}
       <div
         ref={cardsAreaRef}
-        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minHeight: '120px', zIndex: 11 }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-2)',
+          minHeight: '120px',
+          zIndex: 11,
+          position: 'relative',
+        }}
       >
         {/* Modifiers & Actions */}
         {(displayedModifierCards.length > 0 || displayedActionCards.length > 0) && (
@@ -237,15 +412,43 @@ function PlayerHand({
                   zIndex: i,
                   transformOrigin: 'center center',
                   borderRadius: 'var(--radius-md)',
-                  flexShrink: 0
+                  flexShrink: 0,
                 }}
               >
+                <div style={{ position: 'relative', borderRadius: 'var(--radius-md)', overflow: 'visible' }}>
+                  {(isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted) && (
+                    <motion.div
+                      initial={isNewBustEvent ? { opacity: 0 } : false}
+                      animate={{ opacity: 1 }}
+                      transition={
+                        isNewBustEvent
+                          ? {
+                              delay: (Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS) / 1000,
+                              duration: BUST_CARD_TINT_DURATION_MS / 1000,
+                              ease: 'easeOut',
+                            }
+                          : { duration: 0 }
+                      }
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: 'var(--radius-md)',
+                        background: 'linear-gradient(145deg, rgba(215,56,59,0.28), rgba(130,8,14,0.82))',
+                        boxShadow: i === duplicateCardIndex
+                          ? '0 0 22px rgba(215,56,59,0.48)'
+                          : '0 0 10px rgba(215,56,59,0.22)',
+                        mixBlendMode: 'screen',
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                      }}
+                    />
+                  )}
                 <Card
                   card={c}
-                  status={player.status === 'active' ? undefined : player.status}
+                  status={player.status === 'active' || player.status === 'busted' ? undefined : player.status}
                   disableIntroAnimation
-                  isBustCard={player.status === 'busted' && c.id === lastEvent?.card?.id}
                 />
+                </div>
               </motion.div>
             )})
           )}
@@ -293,69 +496,6 @@ function Flip7Celebration() {
   );
 }
 
-// ─── Second Chance Sparkle ─────────────────────────────────────────────────────
-
-function SecondChanceSparkle({ playerId, players }: { playerId: string; players: PlayerState[] }) {
-  const player = players.find((p) => p.id === playerId);
-  if (!player) return null;
-
-  return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1001, overflow: 'hidden' }}>
-      {/* Gold sparkle burst from center */}
-      {Array.from({ length: 20 }).map((_, i) => {
-        const angle = (i / 20) * Math.PI * 2;
-        const distance = 100 + Math.random() * 100;
-        return (
-          <motion.div
-            key={i}
-            initial={{ 
-              opacity: 1, 
-              scale: 0,
-              x: '50vw',
-              y: '50vh',
-            }}
-            animate={{ 
-              opacity: 0,
-              scale: Math.random() * 1.5 + 0.5,
-              x: `calc(50vw + ${Math.cos(angle) * distance}px)`,
-              y: `calc(50vh + ${Math.sin(angle) * distance}px)`,
-            }}
-            transition={{ 
-              duration: 1.5,
-              ease: 'easeOut',
-              delay: i * 0.02
-            }}
-            style={{
-              position: 'absolute',
-              width: 8,
-              height: 8,
-              background: 'var(--primary)',
-              borderRadius: '50%',
-              boxShadow: '0 0 10px var(--primary), 0 0 20px var(--primary)',
-            }}
-          />
-        );
-      })}
-      {/* Center glow */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.5 }}
-        animate={{ opacity: [0, 1, 0], scale: [0.5, 1.5, 2] }}
-        transition={{ duration: 1, ease: 'easeOut' }}
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 100,
-          height: 100,
-          background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)',
-          borderRadius: '50%',
-        }}
-      />
-    </div>
-  );
-}
-
 // ─── Game Screen ──────────────────────────────────────────────────────────────
 
 export function Game() {
@@ -390,13 +530,18 @@ export function Game() {
 
     let destination = source;
 
-    if (pendingDrawAnimation.eventKind === 'second_chance_used') {
-      const handAreaRect = cardsAreaRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
-      if (handAreaRect) {
-        // Target OUTSIDE the hand area (above it)
+    if (pendingDrawAnimation.eventKind === 'second_chance_used' && pendingDrawAnimation.card.type === 'number') {
+      const rowRect = numberRowRefs.current[pendingDrawAnimation.playerId]?.getBoundingClientRect();
+      if (rowRect) {
+        const insertionIndex = getInsertionIndex(targetPlayer.numberCards, pendingDrawAnimation.card.value);
+        const fullDestination = {
+          x: rowRect.left + getCardDestinationX(rowRect.width, targetPlayer.numberCards.length + 1, insertionIndex),
+          y: rowRect.top,
+        };
+
         destination = {
-          x: handAreaRect.left + (handAreaRect.width - CARD_WIDTH) / 2,
-          y: handAreaRect.top - CARD_HEIGHT - 40, 
+          x: source.x + (fullDestination.x - source.x) * 0.6,
+          y: source.y + (fullDestination.y - source.y) * 0.6,
         };
       }
     } else if (pendingDrawAnimation.card.type === 'number') {
@@ -494,7 +639,6 @@ export function Game() {
       }} />
 
       {hasFlip7 && <Flip7Celebration />}
-      {lastEvent?.kind === 'second_chance_used' && <SecondChanceSparkle playerId={lastEvent.playerId} players={players} />}
 
       {/* Top Bar */}
       <header style={{ 
@@ -654,6 +798,10 @@ export function Game() {
             isFaceDown={pendingDrawAnimation.phase === 'spawn'}
             disableIntroAnimation
             flipOrigin="left center"
+            isBustCard={
+              pendingDrawAnimation.eventKind === 'bust' ||
+              pendingDrawAnimation.eventKind === 'second_chance_used'
+            }
           />
         </motion.div>
       )}

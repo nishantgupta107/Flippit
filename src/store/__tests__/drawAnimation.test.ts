@@ -34,6 +34,7 @@ describe('runPendingDrawAnimation', () => {
         card: makeCard(),
         playerId: 'human',
         phase: 'spawn',
+        eventKind: 'card_drawn',
       },
       (animation) => {
         updates.push(animation?.phase ?? null);

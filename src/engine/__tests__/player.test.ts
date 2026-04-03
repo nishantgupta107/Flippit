@@ -92,7 +92,8 @@ describe('hitPlayer — number cards', () => {
 
     const newState = hitPlayer(state, 'human');
     expect(newState.players[0].status).toBe('busted');
-    expect(newState.players[0].numberCards).toHaveLength(0);
+    expect(newState.players[0].numberCards).toHaveLength(2);
+    expect(newState.players[0].numberCards.every((card) => card.value === 5)).toBe(true);
     expect(newState.lastEvent?.kind).toBe('bust');
   });
 
