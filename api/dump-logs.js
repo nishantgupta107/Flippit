@@ -47,34 +47,33 @@ function formatLogEntryText(entry) {
   return line;
 }
 
-function dumpLogsHandler(req, res) {
+function handler(req, res) {
   if (req.method !== 'POST') {
-    res.statusCode = 405;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Method not allowed' }));
+    res.status(405).json({ error: 'Method not allowed' });
     return;
   }
 
-  let body = '';
-  req.on('data', (chunk) => {
-    body += chunk.toString();
-  });
+  // Vercel pre-parses JSON body in req.body
+  const data = req.body || {};
+  const logs = data.logs || [];
+  const timestamp = data.timestamp || Date.now();
+  
+  if (logs.length === 0) {
+    res.status(400).json({ error: 'No logs provided' });
+    return;
+  }
 
-  req.on('end', () => {
+  try {
+    const filenameBase = formatTimestamp(timestamp);
+    
+    // Note: Vercel serverless functions have a read-only filesystem except for /tmp
+    // This part will fail in production if DUMPS_DIR is not correctly configured
+    // We try/catch it so the function still succeeds 200 (logs are received at least)
     try {
-      const data = JSON.parse(body);
-      const logs = data.logs || [];
-      const timestamp = data.timestamp || Date.now();
-      
-      if (logs.length === 0) {
-        res.statusCode = 400;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'No logs provided' }));
-        return;
+      if (!fs.existsSync(DUMPS_DIR)) {
+        fs.mkdirSync(DUMPS_DIR, { recursive: true });
       }
 
-      const filenameBase = formatTimestamp(timestamp);
-      
       // Write JSON file
       const jsonPath = path.join(DUMPS_DIR, `events-${filenameBase}.json`);
       fs.writeFileSync(jsonPath, JSON.stringify(logs, null, 2));
@@ -84,23 +83,31 @@ function dumpLogsHandler(req, res) {
       const textContent = logs.map(formatLogEntryText).join('\n\n');
       fs.writeFileSync(textPath, textContent);
       
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ 
+      res.status(200).json({ 
         success: true, 
         count: logs.length,
+        persisted: true,
         files: [
           `events-${filenameBase}.json`,
           `events-${filenameBase}.txt`
         ]
-      }));
-    } catch (error) {
-      console.error('Error dumping logs:', error);
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Failed to dump logs: ' + error.message }));
+      });
+    } catch (fsError) {
+      console.warn('Filesystem write failed (expected on Vercel):', fsError.message);
+      // In production, we just log that we received them but couldn't save to disk
+      res.status(200).json({ 
+        success: true, 
+        count: logs.length,
+        persisted: false,
+        message: 'Logs received, but filesystem is read-only. Consider using a DB for persistent logs.'
+      });
     }
-  });
+
+  } catch (error) {
+    console.error('Error processing logs:', error);
+    res.status(500).json({ error: 'Failed to process logs: ' + error.message });
+  }
 }
 
-module.exports = { dumpLogsHandler, DUMPS_DIR };
+module.exports = handler;
+

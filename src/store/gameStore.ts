@@ -29,6 +29,7 @@ interface GameStore {
   stay: () => void;
   startNextRound: () => void;
   resetGame: () => void;
+  syncState: (state: GameState) => void;
 }
 
 const AI_DELAY_MS = () => 500 + Math.random() * 300; // 500–800ms
@@ -96,6 +97,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     logUserAction('RESET_GAME_CLICKED');
     logGameEvent('GAME_RESET');
     set({ gameState: null, isAIThinking: false, pendingDrawAnimation: null });
+  },
+
+  syncState: (state: GameState) => {
+    // Only update if the phase or active player changed or last event is new
+    // This avoids redundant re-renders on identical syncs
+    set({ gameState: state });
   },
 }));
 

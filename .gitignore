@@ -62,3 +62,4 @@ dev-dist/
 animation ideas.txt
 .gitignore
 freeze-animation-reference.ts
+.vercel
