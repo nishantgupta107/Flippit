@@ -212,7 +212,7 @@ export function MultiplayerLobby() {
 
           <div style={{ width: '100%', marginTop: 'var(--space-4)' }}>
             <h3 style={{ fontSize: '1.1rem', marginBottom: 'var(--space-2)' }}>
-              Connected Players ({connectedPlayers.length}) 
+              Connected Players ({connectedPlayers.length})
               {readyConnections.size > 0 && <span style={{ color: 'var(--primary)', fontSize: '0.9rem' }}> ({readyConnections.size} ready)</span>}
             </h3>
             <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -222,9 +222,9 @@ export function MultiplayerLobby() {
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     {p.id === 'human' && <span style={{ color: 'var(--primary)' }}>(You)</span>}
                     {p.id !== 'human' && (
-                      <span style={{ 
-                        fontSize: '0.75rem', 
-                        padding: '0.25rem 0.5rem', 
+                      <span style={{
+                        fontSize: '0.75rem',
+                        padding: '0.25rem 0.5rem',
                         borderRadius: 'var(--radius-sm)',
                         background: readyConnections.has(p.id) ? 'var(--primary-container)' : 'var(--surface-variant)',
                         color: readyConnections.has(p.id) ? 'var(--on-primary-container)' : 'var(--on-surface-variant)'

@@ -62,16 +62,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const initial = initMultiplayerGame(players);
     logGameEvent('GAME_INITIALIZED', { playerCount: initial.players.length, dealerIndex: initial.dealerIndex }, initial);
     const afterDeal = startRound(initial);
-    
+
     // Set the game state immediately so host can navigate
     set({ gameState: afterDeal, isAIThinking: true });
-    
+
     // Broadcast initial state to all connected clients immediately
     const store = get();
     if (store.isHost) {
       networkManager.broadcastState(afterDeal);
     }
-    
+
     performDealSequence(afterDeal, set, get);
   },
 
@@ -317,8 +317,10 @@ function performDealSequence(
          activePlayerIndex: (state.dealerIndex + 1) % state.players.length,
          lastEvent: null 
        };
-       set({ gameState: finalState, isAIThinking: false });
-       scheduleAIIfNeeded(finalState, set, get);
+       set({ isAIThinking: false });
+       processGameStateUpdate(finalState, set, get, () => {
+         scheduleAIIfNeeded(finalState, set, get);
+       });
        return;
     }
     
