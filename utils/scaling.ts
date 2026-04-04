@@ -5,26 +5,33 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 // Base design reference: 390px wide (iPhone 14 Pro viewport)
 const BASE_WIDTH = 390;
 
+// Maximum width for scaling (prevents UI from becoming too large on desktop)
+const MAX_SCALE_WIDTH = 500;
+const EFFECTIVE_WIDTH = Math.min(SCREEN_W, MAX_SCALE_WIDTH);
+
+const MAX_SCALE_HEIGHT = 900;
+const EFFECTIVE_HEIGHT = Math.min(SCREEN_H, MAX_SCALE_HEIGHT);
+
 /**
  * rem — scales with screen width, relative to 16px base font
  * Use for: font sizes, padding, gaps, border radius, icon sizes
  */
 export const rem = (value: number): number =>
-  (value * 16 * SCREEN_W) / BASE_WIDTH;
+  (value * 16 * EFFECTIVE_WIDTH) / BASE_WIDTH;
 
 /**
- * vw — percentage of screen width
+ * vw — percentage of screen width (capped for desktop)
  * Use for: component widths, horizontal margins, card widths
  */
 export const vw = (percent: number): number =>
-  (SCREEN_W * percent) / 100;
+  (EFFECTIVE_WIDTH * percent) / 100;
 
 /**
- * vh — percentage of screen height
+ * vh — percentage of screen height (capped for desktop)
  * Use for: component heights, vertical section spacing, card heights
  */
 export const vh = (percent: number): number =>
-  (SCREEN_H * percent) / 100;
+  (EFFECTIVE_HEIGHT * percent) / 100;
 
 /**
  * Get current screen dimensions (for dynamic calculations)

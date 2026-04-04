@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { Link } from 'expo-router';
-import { rem, vw } from '../../utils/scaling';
+import { vw } from '../../utils/scaling';
 import { colors, typography, spacing } from '../../constants/theme';
 import { PrimaryButton, SecondaryButton, TertiaryButton } from '../../components/ui';
 
@@ -41,9 +41,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   content: {
+    flex: 1,
     padding: spacing[16],
     alignItems: 'center',
-    paddingTop: rem(20),
+    justifyContent: 'center',
   },
   title: {
     ...typography.displayLg,

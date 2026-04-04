@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Link, Stack } from 'expo-router';
-import { colors, typography, spacing } from '../constants/theme';
-import { PrimaryButton, TertiaryButton } from '../components/ui';
-import { useAuth } from '../hooks/useAuth';
+import { colors, typography, spacing } from '../../constants/theme';
+import { PrimaryButton, TertiaryButton } from '../../components/ui';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function ProfileScreen() {
   const { getDisplayName, isAuthenticated, signOut, continueAsGuest } = useAuth();
@@ -27,10 +27,17 @@ export default function ProfileScreen() {
       {isAuthenticated ? (
         <PrimaryButton label="Sign Out" onPress={signOut} />
       ) : (
-        <PrimaryButton
-          label="Continue as Guest"
-          onPress={() => continueAsGuest('Guest Player', 0)}
-        />
+        <>
+          <PrimaryButton
+            label="Continue as Guest"
+            onPress={() => continueAsGuest('Guest Player', 0)}
+          />
+          <View style={{ marginTop: spacing[8] }}>
+            <Link href={"/auth" as any} asChild>
+              <TertiaryButton label="Sign In / Register" onPress={() => {}} />
+            </Link>
+          </View>
+        </>
       )}
 
       <Link href="/(tabs)" asChild>

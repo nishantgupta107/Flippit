@@ -1,18 +1,8 @@
 import { Tabs } from 'expo-router';
-import { View, Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { rem } from '../../utils/scaling';
 import { colors, typography } from '../../constants/theme';
-
-// Simple tab icon component
-function TabIcon({ focused, label }: { focused: boolean; label: string }) {
-  return (
-    <View style={styles.iconContainer}>
-      <Text style={[styles.iconText, focused && styles.iconTextFocused]}>
-        {label[0]}
-      </Text>
-    </View>
-  );
-}
+import { Home, Layers, Gamepad2, Trophy, User } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -24,35 +14,42 @@ export default function TabLayout() {
         tabBarInactiveTintColor: colors.onSurfaceVariant,
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
-        tabBarIconStyle: styles.tabIcon,
+        tabBarShowLabel: true,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Home" />,
+          tabBarIcon: ({ color, size }) => <Home color={color} size={size || rem(1.5)} />,
         }}
       />
       <Tabs.Screen
         name="decks"
         options={{
           title: 'Decks',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Decks" />,
+          tabBarIcon: ({ color, size }) => <Layers color={color} size={size || rem(1.5)} />,
         }}
       />
       <Tabs.Screen
         name="games"
         options={{
           title: 'Games',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Games" />,
+          tabBarIcon: ({ color, size }) => <Gamepad2 color={color} size={size || rem(1.5)} />,
         }}
       />
       <Tabs.Screen
         name="rank"
         options={{
           title: 'Rank',
-          tabBarIcon: ({ focused }) => <TabIcon focused={focused} label="Rank" />,
+          tabBarIcon: ({ color, size }) => <Trophy color={color} size={size || rem(1.5)} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => <User color={color} size={size || rem(1.5)} />,
         }}
       />
     </Tabs>
@@ -63,36 +60,17 @@ const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: colors.surfaceContainerLow,
     borderTopWidth: 0,
-    height: rem(14),
-    paddingBottom: rem(2),
+    height: rem(5),
+    paddingBottom: rem(0.5),
+    paddingTop: rem(0.5),
   },
   tabLabel: {
     ...typography.labelSm,
+    marginTop: rem(0.25),
   },
   tabItem: {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: rem(1),
-  },
-  tabIcon: {
-    marginBottom: rem(0.5),
-  },
-  iconContainer: {
-    width: rem(5),
-    height: rem(5),
-    borderRadius: rem(2.5),
-    backgroundColor: colors.surfaceContainerHigh,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: rem(0.5),
-  },
-  iconText: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    lineHeight: rem(5),
-  },
-  iconTextFocused: {
-    color: colors.primary,
   },
 });

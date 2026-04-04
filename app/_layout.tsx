@@ -44,6 +44,7 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
         <Stack.Screen name="singleplayer" options={{ presentation: 'modal' }} />
         <Stack.Screen name="multiplayer" options={{ presentation: 'modal' }} />
         <Stack.Screen name="game" options={{ gestureEnabled: false }} />
