@@ -1,0 +1,10 @@
+{
+  "name": "flippit-server",
+  "main": "server/src/server.ts",
+  "port": 1999,
+  "compatibilityDate": "2026-04-05",
+  "serve": {
+    "path": "dist",
+    "single": true
+  }
+}

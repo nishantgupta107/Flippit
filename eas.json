@@ -1,0 +1,41 @@
+{
+  "cli": {
+    "version": ">= 14.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "enterpriseProvisioning": "adhoc"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "ios": {
+        "enterpriseProvisioning": "adhoc"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "YOUR_APP_ID",
+        "ascApiKeyPath": "./AuthKey.p8",
+        "ascApiKeyIssuerId": "YOUR_ISSUER_ID",
+        "ascApiKeyId": "YOUR_KEY_ID"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Flippit",
+    "slug": "flippit",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": null,
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": null,
+      "resizeMode": "contain",
+      "backgroundColor": "#001209"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nishantg.flippit",
+      "buildNumber": "1.0.0"
+    },
+    "android": {
+      "package": "com.nishantg.flippit",
+      "versionCode": 1
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "scheme": "flippit",
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "flippit-project-id"
+      },
+      "firebaseApiKey": "${FIREBASE_API_KEY}",
+      "firebaseAuthDomain": "${FIREBASE_AUTH_DOMAIN}",
+      "firebaseProjectId": "${FIREBASE_PROJECT_ID}",
+      "firebaseStorageBucket": "${FIREBASE_STORAGE_BUCKET}",
+      "firebaseMessagingSenderId": "${FIREBASE_MESSAGING_SENDER_ID}",
+      "firebaseAppId": "${FIREBASE_APP_ID}"
+    }
+  }
+}
