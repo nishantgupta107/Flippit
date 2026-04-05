@@ -41,19 +41,19 @@ export const DECK_COMPOSITION = {
   },
   // Modifier cards - Multipliers
   modifiersMult: {
-    x2: 2, // Two x2 multiplier cards
+    x2: 1, // One x2 multiplier card
   },
   // Modifier cards - Bonus
   modifiersBonus: {
-    2: 2,  // Two +2 cards
-    4: 2,  // Two +4 cards
-    6: 2,  // Two +6 cards
+    2: 1,  // One +2 card
+    4: 1,  // One +4 card
+    6: 1,  // One +6 card
     8: 1,  // One +8 card
     10: 1, // One +10 card
   },
   // Action cards
   actions: {
-    SECOND_CHANCE: 2,
+    SECOND_CHANCE: 3,
     FREEZE: 3,
     FLIP_THREE: 3,
   },
