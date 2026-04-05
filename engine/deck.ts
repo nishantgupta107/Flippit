@@ -122,7 +122,19 @@ export function shuffleDeck(deck: Card[], seed?: number): Card[] {
 }
 
 export function buildDeck(seed?: number): Card[] {
-  return shuffleDeck(createBaseDeck(), seed);
+  const shuffled = shuffleDeck(createBaseDeck(), seed);
+
+  // DEBUG: TEST 1 - Second Chance Infinite Loop Prevention
+  // Stack the deck so the first few draws are all Second Chance cards.
+  // This allows you to easily draw shields for all players in the game demo, 
+  // and then draw an extra one to test the pass/discard sequence limitation.
+  shuffled.unshift(
+    { id: 'DEBUG_ACTION_SC_1', type: 'ACTION_SECOND_CHANCE', value: 0 },
+    { id: 'DEBUG_ACTION_SC_2', type: 'ACTION_SECOND_CHANCE', value: 0 },
+    { id: 'DEBUG_ACTION_SC_3', type: 'ACTION_SECOND_CHANCE', value: 0 }
+  );
+
+  return shuffled;
 }
 
 export function drawCard(deck: Card[]): { card: Card; remainingDeck: Card[] } {

@@ -174,7 +174,7 @@ function resolveSecondChanceTarget(state: GameState, targetPlayerId: string): Ga
     return syncPhase(nextState);
   }
 
-  if (activeCount <= 1 || nextPassCount >= activeCount) {
+  if (activeCount <= 1 || nextPassCount >= activeCount || activeCount === activePlayers(state).filter(p => p.hasShield).length) {
     return syncPhase(clearPendingAction(state));
   }
 
@@ -257,7 +257,7 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
       return syncPhase(nextState);
     }
 
-    if (activePlayers(nextState).length <= 1) {
+    if (activePlayers(nextState).length <= 1 || activePlayers(nextState).every(p => p.hasShield)) {
       return syncPhase(nextState);
     }
 
@@ -319,6 +319,15 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
     const duplicateCount = numberCards.filter((entry) => entry.value === card.value).length;
 
     if (duplicateCount > 1) {
+      if (player.hasShield) {
+        // Player is saved from busting by their shield
+        let savedState = discardActionCard(state, card); // Discard the duplicate NUMBER card
+        savedState = updatePlayer(savedState, playerId, {
+          hasShield: false, // Update "Shield No"
+        });
+        return syncPhase(savedState);
+      }
+
       return syncPhase(
         updatePlayer(nextState, playerId, {
           roundScore: 0,
