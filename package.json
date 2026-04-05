@@ -8,6 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "npx expo export -p web",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
     "partykit:dev": "partykit dev",
     "partykit:deploy": "partykit deploy"
   },
@@ -39,9 +41,12 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
     "@types/react-native": "^0.73.0",
+    "jest": "^30.3.0",
     "partykit": "^0.0.111",
+    "ts-jest": "^29.4.9",
     "typescript": "~5.9.2"
   },
   "private": true

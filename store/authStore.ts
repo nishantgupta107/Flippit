@@ -50,7 +50,7 @@ const GUEST_STORAGE_KEY = '@flippit/guest_profile';
  */
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       // Initial state
       user: null,
       isGuest: false,
