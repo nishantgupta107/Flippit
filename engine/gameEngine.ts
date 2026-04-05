@@ -399,7 +399,7 @@ export function playerStay(state: GameState, playerId: string): GameState {
     };
   }
 
-  return syncPhase(nextState);
+  return advanceToNextPlayer(nextState);
 }
 
 export function endRound(state: GameState): GameState {

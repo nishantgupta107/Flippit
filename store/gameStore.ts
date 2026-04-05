@@ -90,7 +90,6 @@ function scheduleBotTurn(
         }
 
         nextState = resolvePendingAction(nextState, target);
-        nextState = advanceToNextPlayer(nextState);
         continue;
       }
 
@@ -102,8 +101,8 @@ function scheduleBotTurn(
       const decision = getBotDecision(nextState, currentPlayer.id);
       nextState =
         decision === 'HIT'
-          ? advanceToNextPlayer(drawForPlayer(nextState, currentPlayer.id))
-          : advanceToNextPlayer(applyPlayerStay(nextState, currentPlayer.id));
+          ? drawForPlayer(nextState, currentPlayer.id)
+          : applyPlayerStay(nextState, currentPlayer.id);
     }
 
     set({ gameState: nextState, isLoading: false });
@@ -129,7 +128,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return;
     }
 
-    const nextState = advanceToNextPlayer(drawForPlayer(gameState, playerId));
+    const nextState = drawForPlayer(gameState, playerId);
     set({ gameState: nextState, isLoading: false });
   },
 
@@ -144,7 +143,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return;
     }
 
-    const nextState = advanceToNextPlayer(drawForPlayer(gameState, playerId));
+    const nextState = drawForPlayer(gameState, playerId);
     set({ gameState: nextState, isLoading: false });
     scheduleBotTurn(set, get);
   },
@@ -160,7 +159,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return;
     }
 
-    const nextState = advanceToNextPlayer(applyPlayerStay(gameState, playerId));
+    const nextState = applyPlayerStay(gameState, playerId);
     set({ gameState: nextState, isLoading: false });
     scheduleBotTurn(set, get);
   },
@@ -171,7 +170,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return;
     }
 
-    const nextState = advanceToNextPlayer(resolvePendingAction(gameState, targetPlayerId));
+    const nextState = resolvePendingAction(gameState, targetPlayerId);
     set({ gameState: nextState, isLoading: false });
 
     if (!isHumanPendingAction(nextState)) {
