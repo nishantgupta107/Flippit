@@ -371,15 +371,17 @@ export function resolvePendingAction(state: GameState, targetPlayerId: string): 
     return state;
   }
 
+  let nextState = state;
   if (pendingAction.type === 'FREEZE_TARGET') {
-    return applyFreezeTarget(state, targetPlayerId);
+    nextState = applyFreezeTarget(state, targetPlayerId);
+  } else if (pendingAction.type === 'FLIP_THREE_TARGET') {
+    nextState = resolveFlipThreeTarget(state, targetPlayerId);
+  } else {
+    nextState = resolveSecondChanceTarget(state, targetPlayerId);
   }
 
-  if (pendingAction.type === 'FLIP_THREE_TARGET') {
-    return resolveFlipThreeTarget(state, targetPlayerId);
-  }
-
-  return resolveSecondChanceTarget(state, targetPlayerId);
+  // Only advance turn AFTER the entire Action chain (including nested Flip Threes) is resolved.
+  return advanceToNextPlayer(nextState);
 }
 
 export function playerStay(state: GameState, playerId: string): GameState {
@@ -498,5 +500,8 @@ export function advanceToNextPlayer(state: GameState): GameState {
 
 export function drawForPlayer(state: GameState, playerId: string): GameState {
   const drawResult = drawFromState(state);
-  return resolveCard(drawResult.state, playerId, drawResult.card);
+  const nextState = resolveCard(drawResult.state, playerId, drawResult.card);
+  
+  // Advance turn AFTER the card is resolved (this includes potentially deep Flip Three chains).
+  return advanceToNextPlayer(nextState);
 }
