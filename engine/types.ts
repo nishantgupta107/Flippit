@@ -59,4 +59,10 @@ export interface GameState {
   roundSeed: number;
   pendingAction?: PendingAction;
   pendingActionPassCount?: number;
+  lastEvent?: {
+    kind: string;
+    playerId: string;
+    card?: Card;
+    message?: string;
+  };
 }

@@ -2,37 +2,55 @@ import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { rem } from '../../utils/scaling';
 import { colors, radius } from '../../constants/theme';
 
+type ChipVariant = 'multiplier' | 'action' | 'outline';
+
 interface ChipProps {
   label: string;
+  variant?: ChipVariant;
   style?: ViewStyle;
 }
 
-/**
- * Circular chip - used for multiplier display (e.g., "x2")
- * Cyan background with NotoSerif-Bold text
- * @see DEV_PLAN.md §7.3, §4d
- */
-export function Chip({ label, style }: ChipProps) {
+export function Chip({ label, variant = 'multiplier', style }: ChipProps) {
+  let bg = colors.tertiary as string;
+  let color = '#001f33'; // Deep contrast for the cyan
+  let borderWidth = 0;
+  let borderColor = 'transparent';
+
+  if (variant === 'action') {
+    bg = colors.secondary;
+    color = '#fff';
+  } else if (variant === 'outline') {
+    bg = 'transparent';
+    color = colors.onSurfaceVariant;
+    borderWidth = 1;
+    borderColor = colors.outlineVariant;
+  }
+
   return (
-    <View style={[styles.container, style]}>
-      <Text style={styles.text}>{label}</Text>
+    <View style={[styles.container, { backgroundColor: bg, borderWidth, borderColor }, style]}>
+      <Text style={[
+        styles.text,
+        {
+          color,
+          fontFamily: variant === 'multiplier' ? 'NotoSerif-Bold' : 'PlusJakartaSans-SemiBold',
+        }
+      ]}>
+        {label}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: rem(3.5),
-    height: rem(3.5),
     borderRadius: radius.full,
-    backgroundColor: colors.tertiary,
+    paddingVertical: rem(0.25),
+    paddingHorizontal: rem(0.75),
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'flex-start',
   },
   text: {
-    fontFamily: 'NotoSerif-Bold',
     fontSize: rem(0.875),
-    color: colors.onTertiary,
-    lineHeight: rem(1.25),
   },
 });
