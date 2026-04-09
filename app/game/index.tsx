@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import Animated, { FadeIn, SlideInUp, SlideOutUp } from 'react-native-reanimated';
 import { colors, radius } from '../../constants/theme';
@@ -24,6 +24,9 @@ export default function GameScreen() {
   const currentPlayer = gameState ? gameState.players[gameState.currentPlayerIndex] : null;
   const humanPlayer = gameState?.players.find(p => !p.isBot);
   const aiPlayers = gameState?.players.filter(p => p.isBot) || [];
+
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
 
   const isHumanTurn = Boolean(currentPlayer && !currentPlayer.isBot);
   const canAct = isHumanTurn && !gameState?.pendingAction && !gameState?.roundOver && !gameState?.gameOver;
@@ -70,18 +73,55 @@ export default function GameScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Opponents Area */}
         {aiPlayers.length > 0 && (
-          <View style={styles.aiGrid}>
-            {aiPlayers.map(ai => (
-              <View key={ai.id} style={styles.aiPlayerWrapper}>
-                <PlayerHand
-                  player={ai}
-                  isActive={currentPlayer?.id === ai.id && gameState.phase === 'PLAYER_TURN'}
-                  pendingDrawAnimation={pendingDrawAnimation}
-                  lastEvent={lastEvent}
-                />
+          isMobile ? (() => {
+            // Mobile: Find the focused opponent. If an opponent's turn, it's them. Otherwise, first active opponent.
+            const focusedOpponent = aiPlayers.find(p => currentPlayer?.id === p.id) || aiPlayers.find(p => p.active) || aiPlayers[0];
+            const otherOpponents = aiPlayers.filter(p => p.id !== focusedOpponent?.id);
+
+            return (
+              <View style={{ gap: rem(1) }}>
+                {/* Other opponents summary */}
+                {otherOpponents.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.miniOpponentsContainer}>
+                    {otherOpponents.map(p => (
+                      <View key={p.id} style={[styles.miniOpponent, p.active ? {} : styles.miniOpponentInactive]}>
+                        <Text style={styles.miniOpponentName}>{p.name}</Text>
+                        <Text style={styles.miniOpponentScore}>Score: {p.totalScore}</Text>
+                        <Text style={styles.miniOpponentStatus}>
+                          {p.active ? '🟢' : p.outReason === 'BANKED' ? '🏦' : p.outReason === 'BUSTED' ? '💥' : p.outReason === 'FROZEN' ? '❄️' : '⚪'}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+
+                {/* Focused Opponent */}
+                {focusedOpponent && (
+                  <View style={styles.aiPlayerWrapper}>
+                    <PlayerHand
+                      player={focusedOpponent}
+                      isActive={currentPlayer?.id === focusedOpponent.id && gameState.phase === 'PLAYER_TURN'}
+                      pendingDrawAnimation={pendingDrawAnimation}
+                      lastEvent={lastEvent}
+                    />
+                  </View>
+                )}
               </View>
-            ))}
-          </View>
+            );
+          })() : (
+            <View style={styles.aiGrid}>
+              {aiPlayers.map(ai => (
+                <View key={ai.id} style={styles.aiPlayerWrapper}>
+                  <PlayerHand
+                    player={ai}
+                    isActive={currentPlayer?.id === ai.id && gameState.phase === 'PLAYER_TURN'}
+                    pendingDrawAnimation={pendingDrawAnimation}
+                    lastEvent={lastEvent}
+                  />
+                </View>
+              ))}
+            </View>
+          )
         )}
 
         {/* Center Table (Draw Deck & Events) */}
@@ -281,6 +321,37 @@ const styles = StyleSheet.create({
   aiPlayerWrapper: {
     flex: 1,
     minWidth: '45%',
+  },
+  miniOpponentsContainer: {
+    flexDirection: 'row',
+    gap: rem(0.5),
+    paddingBottom: rem(0.5),
+  },
+  miniOpponent: {
+    backgroundColor: colors.surfaceContainerLow,
+    padding: rem(0.5),
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    minWidth: rem(6),
+    alignItems: 'center',
+  },
+  miniOpponentInactive: {
+    opacity: 0.6,
+  },
+  miniOpponentName: {
+    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontSize: rem(0.875),
+    color: colors.onSurface,
+  },
+  miniOpponentScore: {
+    fontFamily: 'PlusJakartaSans-Regular',
+    fontSize: rem(0.75),
+    color: colors.onSurfaceVariant,
+  },
+  miniOpponentStatus: {
+    fontSize: rem(1),
+    marginTop: rem(0.25),
   },
   centerTable: {
     alignItems: 'center',

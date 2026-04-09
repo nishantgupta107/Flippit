@@ -249,8 +249,21 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
     return state;
   }
 
+  // Preserve the initial card drawn event, unless overwritten later (e.g. by bust, etc.)
+  let nextState = state;
+  if (!nextState.lastEvent || nextState.lastEvent.card?.id !== card.id) {
+    nextState = {
+      ...state,
+      lastEvent: {
+        kind: 'card_drawn',
+        playerId: playerId,
+        card: card
+      }
+    };
+  }
+
   if (card.type === 'ACTION_SECOND_CHANCE') {
-    let nextState = discardActionCard(state, card);
+    nextState = discardActionCard(nextState, card);
 
     if (!player.hasShield) {
       nextState = updatePlayer(nextState, playerId, { hasShield: true });
@@ -274,7 +287,7 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
   }
 
   if (card.type === 'ACTION_FREEZE') {
-    let nextState = discardActionCard(state, card);
+    nextState = discardActionCard(nextState, card);
 
     if (activePlayers(nextState).length <= 1) {
       nextState = applyRoundScoreToTotal(nextState, playerId);
@@ -296,7 +309,7 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
   }
 
   if (card.type === 'ACTION_FLIP_THREE') {
-    const nextState = discardActionCard(state, card);
+    nextState = discardActionCard(nextState, card);
     if (activePlayers(nextState).length <= 1) {
       return resolveFlipThreeTarget(nextState, playerId);
     }
@@ -312,7 +325,7 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
 
   if (card.type === 'NUMBER') {
     const nextHand = [...player.hand, card];
-    const nextState = updatePlayer(state, playerId, {
+    nextState = updatePlayer(nextState, playerId, {
       hand: nextHand,
     });
     const numberCards = nextHand.filter((entry) => entry.type === 'NUMBER');
@@ -321,8 +334,11 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
     if (duplicateCount > 1) {
       if (player.hasShield) {
         // Player is saved from busting by their shield
-        let savedState = discardActionCard(state, card); // Discard the duplicate NUMBER card
+        let savedState = discardActionCard(nextState, card); // Discard the duplicate NUMBER card
+
+        // Remove from hand again
         savedState = updatePlayer(savedState, playerId, {
+          hand: player.hand,
           hasShield: false, // Update "Shield No"
         });
         return syncPhase(savedState);
@@ -354,7 +370,7 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
   }
 
   return syncPhase(
-    updatePlayer(state, playerId, {
+    updatePlayer(nextState, playerId, {
       hand: [...player.hand, card],
     })
   );
@@ -500,7 +516,18 @@ export function advanceToNextPlayer(state: GameState): GameState {
 
 export function drawForPlayer(state: GameState, playerId: string): GameState {
   const drawResult = drawFromState(state);
-  const nextState = resolveCard(drawResult.state, playerId, drawResult.card);
+
+  // Set lastEvent for drawn card BEFORE resolving to match expected structure
+  let nextState: GameState = {
+    ...drawResult.state,
+    lastEvent: {
+      kind: 'card_drawn',
+      playerId: playerId,
+      card: drawResult.card
+    }
+  };
+
+  nextState = resolveCard(nextState, playerId, drawResult.card);
   
   // Advance turn AFTER the card is resolved (this includes potentially deep Flip Three chains).
   return advanceToNextPlayer(nextState);
