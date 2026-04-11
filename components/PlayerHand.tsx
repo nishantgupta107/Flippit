@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useState } from 'react';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withSequence,
-  withDelay,
+  withRepeat,
   Layout,
   FadeIn
 } from 'react-native-reanimated';
@@ -21,12 +22,22 @@ interface PlayerHandProps {
   lastEvent?: { kind: string; playerId: string; card?: { id: string } };
 }
 
+const FREEZE_SHAKE_DURATION_MS = 500;
+const BUST_WAVE_STEP_MS = 120;
+const BUST_CARD_TINT_DURATION_MS = 220;
+const BUST_SHAKE_DURATION_MS = 520;
+
 export function PlayerHand({
   player,
   isActive,
   pendingDrawAnimation,
   lastEvent,
 }: PlayerHandProps) {
+  const [isFreezeBurstActive, setIsFreezeBurstActive] = useState(false);
+  const [hasBustWaveStarted, setHasBustWaveStarted] = useState(false);
+  const [isBustShakeActive, setIsBustShakeActive] = useState(false);
+  const [isSecondChanceExitActive, setIsSecondChanceExitActive] = useState(false);
+
   const roundScore = player.roundScore;
   const isFrozen = player.outReason === 'FROZEN';
   const isBusted = player.outReason === 'BUSTED';
@@ -34,64 +45,188 @@ export function PlayerHand({
   const modifierCards = player.hand.filter(c => c.type === 'MODIFIER_MULT' || c.type === 'MODIFIER_BONUS');
   const actionCards = player.hand.filter(c => c.type.startsWith('ACTION_'));
 
+  const hasSecondChance = actionCards.some(c => c.type === 'ACTION_SECOND_CHANCE');
+  const isFlip7 = new Set(numberCards.map(c => c.value)).size >= 7;
+
+  const isNewBustEvent = lastEvent?.kind === 'bust' && lastEvent.playerId === player.id;
+  const duplicateCardIndex = isNewBustEvent
+    ? numberCards.findIndex((card) => card.id === lastEvent.card?.id)
+    : -1;
+  const maxBustDistance = duplicateCardIndex >= 0
+    ? Math.max(...numberCards.map((_, index) => Math.abs(index - duplicateCardIndex)))
+    : 0;
+  const bustSpreadDurationMs = maxBustDistance * BUST_WAVE_STEP_MS + BUST_CARD_TINT_DURATION_MS;
+
+  const isPendingBustArrival =
+    pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.eventKind === 'bust';
+  const isPendingSecondChanceExit =
+    pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.eventKind === 'second_chance_used';
+  const shouldShowSecondChanceBorder = hasSecondChance || isSecondChanceExitActive;
+
+  useEffect(() => {
+    if (isPendingSecondChanceExit) {
+      setIsSecondChanceExitActive(true);
+      return;
+    }
+
+    if (!hasSecondChance) {
+      setIsSecondChanceExitActive(false);
+    }
+  }, [hasSecondChance, isPendingSecondChanceExit]);
+
+  useEffect(() => {
+    if (lastEvent?.kind !== 'freeze' || lastEvent.playerId !== player.id) {
+      return;
+    }
+
+    setIsFreezeBurstActive(true);
+    const timeoutId = setTimeout(() => {
+      setIsFreezeBurstActive(false);
+    }, FREEZE_SHAKE_DURATION_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [lastEvent?.kind, lastEvent?.playerId, player.id]);
+
+  useEffect(() => {
+    if (!isBusted) {
+      setHasBustWaveStarted(false);
+      setIsBustShakeActive(false);
+      return;
+    }
+
+    if (!isNewBustEvent) {
+      setHasBustWaveStarted(true);
+      setIsBustShakeActive(false);
+      return;
+    }
+
+    if (isPendingBustArrival) {
+      setHasBustWaveStarted(false);
+      setIsBustShakeActive(false);
+      return;
+    }
+
+    setHasBustWaveStarted(true);
+    setIsBustShakeActive(false);
+
+    const shakeTimeoutId = setTimeout(() => {
+      setIsBustShakeActive(true);
+    }, bustSpreadDurationMs);
+
+    const cleanupTimeoutId = setTimeout(() => {
+      setIsBustShakeActive(false);
+    }, bustSpreadDurationMs + BUST_SHAKE_DURATION_MS);
+
+    return () => {
+      clearTimeout(shakeTimeoutId);
+      clearTimeout(cleanupTimeoutId);
+    };
+  }, [bustSpreadDurationMs, isBusted, isNewBustEvent, isPendingBustArrival]);
+
   const shakeTranslateX = useSharedValue(0);
   const shakeTranslateY = useSharedValue(0);
+  const flip7Scale = useSharedValue(1);
+  const borderPulse = useSharedValue(0);
 
   useEffect(() => {
-    if (lastEvent?.kind === 'freeze' && lastEvent.playerId === player.id) {
+    if (isFreezeBurstActive) {
       shakeTranslateX.value = withSequence(
-        withTiming(2, { duration: 50 }),
-        withTiming(-2, { duration: 50 }),
-        withTiming(2, { duration: 50 }),
-        withTiming(-1, { duration: 50 }),
-        withTiming(1, { duration: 50 }),
-        withTiming(0, { duration: 50 })
+        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
+        withTiming(-2, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
+        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
+        withTiming(-1, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
+        withTiming(1, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
+        withTiming(0, { duration: FREEZE_SHAKE_DURATION_MS / 6 })
       );
       shakeTranslateY.value = withSequence(
-        withTiming(2, { duration: 50 }),
-        withTiming(0, { duration: 50 }),
-        withTiming(-1, { duration: 50 }),
-        withTiming(2, { duration: 50 }),
-        withTiming(0, { duration: 50 })
+        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
+        withTiming(0, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
+        withTiming(-1, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
+        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
+        withTiming(0, { duration: FREEZE_SHAKE_DURATION_MS / 5 })
       );
     }
-  }, [lastEvent, player.id, shakeTranslateX, shakeTranslateY]);
+  }, [isFreezeBurstActive, shakeTranslateX, shakeTranslateY]);
 
   useEffect(() => {
-    if (isBusted && lastEvent?.kind === 'bust' && lastEvent.playerId === player.id) {
-      // Small delay then shake
-      shakeTranslateX.value = withDelay(
-        200,
-        withSequence(
-          withTiming(-10, { duration: 80 }),
-          withTiming(10, { duration: 80 }),
-          withTiming(-8, { duration: 80 }),
-          withTiming(8, { duration: 80 }),
-          withTiming(-4, { duration: 80 }),
-          withTiming(0, { duration: 80 })
-        )
+    if (isBustShakeActive) {
+      shakeTranslateX.value = withSequence(
+        withTiming(-10, { duration: BUST_SHAKE_DURATION_MS / 6 }),
+        withTiming(10, { duration: BUST_SHAKE_DURATION_MS / 6 }),
+        withTiming(-8, { duration: BUST_SHAKE_DURATION_MS / 6 }),
+        withTiming(8, { duration: BUST_SHAKE_DURATION_MS / 6 }),
+        withTiming(-4, { duration: BUST_SHAKE_DURATION_MS / 6 }),
+        withTiming(0, { duration: BUST_SHAKE_DURATION_MS / 6 })
       );
-      shakeTranslateY.value = withDelay(
-        200,
-        withSequence(
-          withTiming(1, { duration: 80 }),
-          withTiming(-1, { duration: 80 }),
-          withTiming(1, { duration: 80 }),
-          withTiming(0, { duration: 80 })
-        )
+      shakeTranslateY.value = withSequence(
+        withTiming(1, { duration: BUST_SHAKE_DURATION_MS / 4 }),
+        withTiming(-1, { duration: BUST_SHAKE_DURATION_MS / 4 }),
+        withTiming(1, { duration: BUST_SHAKE_DURATION_MS / 4 }),
+        withTiming(0, { duration: BUST_SHAKE_DURATION_MS / 4 })
       );
     }
-  }, [isBusted, lastEvent, player.id, shakeTranslateX, shakeTranslateY]);
+  }, [isBustShakeActive, shakeTranslateX, shakeTranslateY]);
+
+  useEffect(() => {
+    if (isFlip7) {
+      flip7Scale.value = withRepeat(
+        withSequence(
+          withTiming(1.02, { duration: 1000 }),
+          withTiming(1, { duration: 1000 })
+        ),
+        -1, // infinite
+        true
+      );
+    } else {
+      flip7Scale.value = withTiming(1);
+    }
+  }, [isFlip7, flip7Scale]);
+
+  useEffect(() => {
+    if (shouldShowSecondChanceBorder) {
+      borderPulse.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 950 }),
+          withTiming(0, { duration: 950 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      borderPulse.value = withTiming(0);
+    }
+  }, [shouldShowSecondChanceBorder, borderPulse]);
 
   const containerAnimatedStyle = useAnimatedStyle(() => {
+    let borderColor = isActive ? colors.primary : colors.outlineVariant;
+    let borderWidth = isActive ? 2 : 1;
+
+    // Reanimated doesn't support complex box-shadow interpolation well in RN natively via useAnimatedStyle simply,
+    // so we interpolate the border color and width instead.
+    if (shouldShowSecondChanceBorder) {
+      // Simulate glowing #86efac
+      borderWidth = 2;
+    }
+
     return {
       transform: [
         { translateX: shakeTranslateX.value },
-        { translateY: shakeTranslateY.value }
+        { translateY: shakeTranslateY.value },
+        { scale: flip7Scale.value }
       ],
-      borderColor: isActive ? colors.primary : colors.outlineVariant,
-      borderWidth: isActive ? 2 : 1,
+      borderColor,
+      borderWidth,
       backgroundColor: isActive ? colors.surfaceContainerHigh : colors.surfaceContainerLow,
+    };
+  });
+
+  const secondChanceBorderStyle = useAnimatedStyle(() => {
+    return {
+      opacity: borderPulse.value,
+      borderWidth: 2,
+      borderColor: '#86efac',
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: radius.lg,
     };
   });
 
@@ -118,6 +253,10 @@ export function PlayerHand({
 
   return (
     <Animated.View style={[styles.container, containerAnimatedStyle]}>
+      {shouldShowSecondChanceBorder && (
+        <Animated.View style={secondChanceBorderStyle} />
+      )}
+
       {isFrozen && (
         <View style={styles.frozenOverlay}>
           {/* Simple blue tint for frozen state instead of complex SVG filter */}
@@ -172,11 +311,19 @@ export function PlayerHand({
                     }
                   ]}
                 >
-                  <Card
-                    card={c}
-                    status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
-                    disableIntroAnimation={false} // Let it animate in if it wasn't in pending
-                  />
+                  <View style={{ position: 'relative' }}>
+                    {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
+                      <Animated.View
+                        entering={FadeIn.delay(Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
+                        style={styles.bustTint}
+                      />
+                    )}
+                    <Card
+                      card={c}
+                      status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
+                      disableIntroAnimation={false} // Let it animate in if it wasn't in pending
+                    />
+                  </View>
                 </Animated.View>
               );
             })
@@ -250,5 +397,12 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     // Wrapper for any layout animations
-  }
+  },
+  bustTint: {
+    position: 'absolute',
+    inset: 0,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(215, 56, 59, 0.4)',
+    zIndex: 2,
+  },
 });

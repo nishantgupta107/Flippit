@@ -6,6 +6,7 @@ import { colors, radius } from '../../constants/theme';
 import { PrimaryButton, SecondaryButton, TertiaryButton } from '../../components/ui';
 import { PlayerHand } from '../../components/PlayerHand';
 import { Card } from '../../components/ui/Card';
+import { Flip7Celebration } from '../../components/Flip7Celebration';
 import useGameStore from '../../store/gameStore';
 import type { PlayerInput } from '../../engine/types';
 import { rem } from '../../utils/scaling';
@@ -49,6 +50,10 @@ export default function GameScreen() {
 
   const drawPileLength = gameState ? gameState.deck.length : 0;
   const lastEvent = gameState?.lastEvent;
+
+  const hasFlip7 = gameState?.players.some(p => {
+    return new Set(p.hand.filter(c => c.type === 'NUMBER').map(c => c.value)).size >= 7;
+  }) ?? false;
 
   // Render start screen if game not initialized
   if (!gameState) {
@@ -200,6 +205,9 @@ export default function GameScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Flip 7 Celebration Overlay */}
+      {hasFlip7 && <Flip7Celebration />}
 
       {/* Floating Card Animation Overlay */}
       {isFloatingCardVisible && pendingDrawAnimation && (
