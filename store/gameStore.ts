@@ -4,9 +4,13 @@ import { drawForPlayer, initGame as initEngineGame, playerStay as applyPlayerSta
 import type { GameState, PlayerInput } from '@/engine/types';
 import { PendingDrawAnimation, getPendingDrawAnimation, runPendingDrawAnimation, waitForNonCardEvent } from './drawAnimation';
 
+// Track which card events have already been animated to prevent duplicates
+const animatedEventIds = new Set<string>();
+
 interface GameStoreState {
   gameState: GameState | null;
   pendingDrawAnimation: PendingDrawAnimation | null;
+  displayedActivePlayerId: string | null;
   isLoading: boolean;
   initGame: (players: PlayerInput[], seed?: number) => void;
   dealCard: (playerId: string) => void;
@@ -20,6 +24,14 @@ const BOT_DELAY_MS = 600;
 
 function getCurrentPlayer(state: GameState) {
   return state.players[state.currentPlayerIndex] ?? null;
+}
+
+function getDisplayedActivePlayerId(state: GameState): string | null {
+  if (state.pendingAction) {
+    return state.pendingAction.actingPlayerId;
+  }
+
+  return getCurrentPlayer(state)?.id ?? null;
 }
 
 function isHumanPendingAction(state: GameState): boolean {
@@ -75,7 +87,15 @@ function handleGameStateTransition(
 ) {
   const pendingDrawAnimation = getPendingDrawAnimation(state);
 
+  // Skip animation if this card event was already animated
+  if (pendingDrawAnimation && animatedEventIds.has(pendingDrawAnimation.card.id)) {
+    set({ gameState: state, pendingDrawAnimation: null });
+    onComplete();
+    return;
+  }
+
   if (pendingDrawAnimation) {
+    animatedEventIds.add(pendingDrawAnimation.card.id);
     set({ gameState: state, pendingDrawAnimation });
 
     const pendingCardId = pendingDrawAnimation.card.id;
@@ -104,7 +124,10 @@ function handleGameStateTransition(
           return;
         }
 
-        set({ pendingDrawAnimation: null });
+        set({
+          pendingDrawAnimation: null,
+          displayedActivePlayerId: getDisplayedActivePlayerId(currentState),
+        });
         onComplete();
       }
     );
@@ -119,8 +142,16 @@ function handleGameStateTransition(
   const hasPendingAction = !!state.pendingAction;
 
   if (hasEvent || hasPendingAction) {
-    waitForNonCardEvent(onComplete);
+    waitForNonCardEvent(() => {
+      const currentState = get().gameState;
+
+      set({
+        displayedActivePlayerId: currentState ? getDisplayedActivePlayerId(currentState) : null,
+      });
+      onComplete();
+    });
   } else {
+    set({ displayedActivePlayerId: getDisplayedActivePlayerId(state) });
     onComplete();
   }
 }
@@ -169,14 +200,23 @@ function scheduleBotTurn(
 export const useGameStore = create<GameStoreState>((set, get) => ({
   gameState: null,
   pendingDrawAnimation: null,
+  displayedActivePlayerId: null,
   isLoading: false,
 
   initGame: (players, seed) => {
+    // Clear animated event IDs for a fresh game
+    animatedEventIds.clear();
+
     const nextState = {
       ...initEngineGame(players, seed),
       phase: 'PLAYER_TURN' as const,
     };
-    set({ gameState: nextState, pendingDrawAnimation: null, isLoading: false });
+    set({
+      gameState: nextState,
+      pendingDrawAnimation: null,
+      displayedActivePlayerId: getDisplayedActivePlayerId(nextState),
+      isLoading: false,
+    });
     scheduleBotTurn(set, get);
   },
 
@@ -240,11 +280,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return;
     }
 
+    // Clear animated event IDs for the new round
+    animatedEventIds.clear();
+
     const nextState = {
       ...startEngineRound(gameState),
       phase: 'PLAYER_TURN' as const,
     };
-    set({ gameState: nextState, pendingDrawAnimation: null, isLoading: false });
+    set({
+      gameState: nextState,
+      pendingDrawAnimation: null,
+      displayedActivePlayerId: getDisplayedActivePlayerId(nextState),
+      isLoading: false,
+    });
     scheduleBotTurn(set, get);
   },
 }));

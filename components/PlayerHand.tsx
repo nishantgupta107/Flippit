@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { LayoutChangeEvent, View, Text, StyleSheet } from 'react-native';
 import { useState } from 'react';
 import Animated, {
   useSharedValue,
@@ -18,6 +18,7 @@ import { rem } from '../utils/scaling';
 interface PlayerHandProps {
   player: PlayerState;
   isActive: boolean;
+  isMobile: boolean;
   pendingDrawAnimation?: any;
   lastEvent?: { kind: string; playerId: string; card?: { id: string } };
 }
@@ -30,6 +31,7 @@ const BUST_SHAKE_DURATION_MS = 520;
 export function PlayerHand({
   player,
   isActive,
+  isMobile,
   pendingDrawAnimation,
   lastEvent,
 }: PlayerHandProps) {
@@ -37,12 +39,19 @@ export function PlayerHand({
   const [hasBustWaveStarted, setHasBustWaveStarted] = useState(false);
   const [isBustShakeActive, setIsBustShakeActive] = useState(false);
   const [isSecondChanceExitActive, setIsSecondChanceExitActive] = useState(false);
+  const [numberLaneWidth, setNumberLaneWidth] = useState(0);
+  const [modifierLaneHeight, setModifierLaneHeight] = useState(0);
+  const seenNumberCardIdsRef = useRef<Set<string>>(
+    new Set(player.hand.filter((card) => card.type === 'NUMBER').map((card) => card.id))
+  );
 
   const roundScore = player.roundScore;
   const isFrozen = player.outReason === 'FROZEN';
   const isBusted = player.outReason === 'BUSTED';
   const numberCards = player.hand.filter(c => c.type === 'NUMBER');
-  const modifierCards = player.hand.filter(c => c.type === 'MODIFIER_MULT' || c.type === 'MODIFIER_BONUS');
+  const modifierCards = player.hand
+    .filter(c => c.type === 'MODIFIER_MULT' || c.type === 'MODIFIER_BONUS')
+    .sort((a, b) => a.value - b.value || a.id.localeCompare(b.id));
   const actionCards = player.hand.filter(c => c.type.startsWith('ACTION_'));
 
   const hasSecondChance = actionCards.some(c => c.type === 'ACTION_SECOND_CHANCE');
@@ -251,6 +260,62 @@ export function PlayerHand({
     ? actionCards.filter(c => c.id !== pendingDrawAnimation.card.id)
     : actionCards;
 
+  const cardWidth = rem(5);
+  const handGap = rem(0.2);
+  const minCascadeStep = rem(1.15);
+  const chipHeightEstimate = rem(1.75);
+  const modifierLaneWidth = rem(2.7);
+  const modifierBaseGap = rem(0);
+  const modifierCascadeOffset = rem(1.05);
+
+  const cardSpacing = (() => {
+    const cardCount = displayedNumberCards.length;
+
+    if (cardCount <= 1) {
+      return 0;
+    }
+
+    const fullWidth = cardCount * cardWidth + (cardCount - 1) * handGap;
+    if (!numberLaneWidth || fullWidth <= numberLaneWidth) {
+      return handGap;
+    }
+
+    const availableStep = (numberLaneWidth - cardWidth) / (cardCount - 1);
+    const clampedStep = Math.max(minCascadeStep, Math.min(cardWidth + handGap, availableStep));
+
+    return clampedStep - cardWidth;
+  })();
+
+  const modifierSpacing = (() => {
+    const chipCount = displayedModifierCards.length;
+
+    if (chipCount <= 3) {
+      return modifierBaseGap;
+    }
+
+    const fullHeight = chipCount * chipHeightEstimate + (chipCount - 1) * modifierBaseGap;
+    if (!modifierLaneHeight || fullHeight <= modifierLaneHeight) {
+      return modifierBaseGap;
+    }
+
+    const availableStep = (modifierLaneHeight - chipHeightEstimate) / (chipCount - 1);
+    return availableStep >= chipHeightEstimate ? modifierBaseGap : Math.max(modifierCascadeOffset, availableStep);
+  })();
+
+  const handleNumberLaneLayout = (event: LayoutChangeEvent) => {
+    setNumberLaneWidth(event.nativeEvent.layout.width);
+  };
+
+  const handleModifierLaneLayout = (event: LayoutChangeEvent) => {
+    setModifierLaneHeight(event.nativeEvent.layout.height);
+  };
+
+  useEffect(() => {
+    displayedNumberCards.forEach((card) => {
+      seenNumberCardIdsRef.current.add(card.id);
+    });
+  }, [displayedNumberCards]);
+
   return (
     <Animated.View style={[styles.container, containerAnimatedStyle]}>
       {shouldShowSecondChanceBorder && (
@@ -275,11 +340,132 @@ export function PlayerHand({
 
       {/* Cards Area */}
       <View style={styles.cardsArea}>
-        {(displayedModifierCards.length > 0 || displayedActionCards.length > 0) && (
-          <View style={styles.chipsRow}>
-            {displayedModifierCards.map(c => (
-              <Chip key={c.id} label={c.type === 'MODIFIER_MULT' ? `x${c.value}` : `+${c.value}`} variant="multiplier" />
-            ))}
+        {isMobile ? (
+          <>
+            {(displayedModifierCards.length > 0 || displayedActionCards.length > 0) && (
+              <View style={styles.chipsRow}>
+                {displayedModifierCards.map(c => (
+                  <Chip key={c.id} label={c.type === 'MODIFIER_MULT' ? `x${c.value}` : `+${c.value}`} variant="multiplier" />
+                ))}
+                {displayedActionCards.map(c => (
+                  <Chip key={c.id} label={
+                    c.type === 'ACTION_FREEZE' ? 'Freeze' :
+                    c.type === 'ACTION_FLIP_THREE' ? 'Flip 3' : '2nd Chance'
+                  } variant="action" />
+                ))}
+              </View>
+            )}
+
+            <View style={styles.numberRow}>
+              {displayedNumberCards.length === 0 ? (
+                <Text style={styles.emptyText}>No cards drawn.</Text>
+              ) : (
+                displayedNumberCards.map((c, i) => {
+                  const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
+
+                  return (
+                    <Animated.View
+                      key={c.id}
+                      layout={Layout.springify().damping(16).stiffness(200)}
+                      entering={hasSeenCard ? undefined : FadeIn}
+                      style={[
+                        styles.cardWrapper,
+                        {
+                          marginLeft: i === 0 ? 0 : -rem(2),
+                          zIndex: i,
+                        }
+                      ]}
+                    >
+                      <View style={styles.cardContent}>
+                        {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
+                          <Animated.View
+                            entering={FadeIn.delay(Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
+                            style={styles.bustTint}
+                          />
+                        )}
+                        <Card
+                          card={c}
+                          status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
+                          disableIntroAnimation={hasSeenCard}
+                        />
+                      </View>
+                    </Animated.View>
+                  );
+                })
+              )}
+            </View>
+          </>
+        ) : (
+          <View style={styles.desktopCardsLayout}>
+            <View
+              style={[styles.modifierLane, { width: modifierLaneWidth }]}
+              onLayout={handleModifierLaneLayout}
+            >
+              <View style={styles.modifierLaneInner}>
+                {displayedModifierCards.map((c, index) => (
+                  <Animated.View
+                    key={c.id}
+                    layout={Layout.springify().damping(18).stiffness(220)}
+                    entering={FadeIn}
+                    style={{
+                      marginTop: index === 0 ? 0 : displayedModifierCards.length > 3 ? -(chipHeightEstimate - modifierSpacing) / 2 : rem(0.5),
+                      zIndex: index,
+                    }}
+                  >
+                    <Chip
+                      label={c.type === 'MODIFIER_MULT' ? `x${c.value}` : `+${c.value}`}
+                      variant="multiplier"
+                      style={styles.modifierChip}
+                    />
+                  </Animated.View>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.desktopNumberLane} onLayout={handleNumberLaneLayout}>
+              <View style={styles.numberRow}>
+                {displayedNumberCards.length === 0 ? (
+                  <Text style={styles.emptyText}>No cards drawn.</Text>
+                ) : (
+                  displayedNumberCards.map((c, i) => {
+                    const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
+
+                    return (
+                      <Animated.View
+                        key={c.id}
+                        layout={Layout.springify().damping(16).stiffness(200)}
+                        entering={hasSeenCard ? undefined : FadeIn}
+                        style={[
+                          styles.cardWrapper,
+                          {
+                            marginLeft: i === 0 ? 0 : cardSpacing,
+                            zIndex: i,
+                          }
+                        ]}
+                      >
+                        <View style={styles.cardContent}>
+                          {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
+                            <Animated.View
+                              entering={FadeIn.delay(Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
+                              style={styles.bustTint}
+                            />
+                          )}
+                          <Card
+                            card={c}
+                            status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
+                            disableIntroAnimation={hasSeenCard}
+                          />
+                        </View>
+                      </Animated.View>
+                    );
+                  })
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+        {!isMobile && displayedActionCards.length > 0 && (
+          <View style={styles.desktopActionRow}>
             {displayedActionCards.map(c => (
               <Chip key={c.id} label={
                 c.type === 'ACTION_FREEZE' ? 'Freeze' :
@@ -288,47 +474,6 @@ export function PlayerHand({
             ))}
           </View>
         )}
-
-        {/* Number Cards Row (Overlapping) */}
-        <View style={styles.numberRow}>
-          {displayedNumberCards.length === 0 ? (
-            <Text style={styles.emptyText}>No cards drawn.</Text>
-          ) : (
-            displayedNumberCards.map((c, i, arr) => {
-              const N = arr.length;
-              const overlap = N > 1 ? -rem(2) : 0;
-
-              return (
-                <Animated.View
-                  key={c.id}
-                  layout={Layout.springify().damping(16).stiffness(200)}
-                  entering={FadeIn}
-                  style={[
-                    styles.cardWrapper,
-                    {
-                      marginLeft: i === 0 ? 0 : overlap,
-                      zIndex: i,
-                    }
-                  ]}
-                >
-                  <View style={{ position: 'relative' }}>
-                    {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
-                      <Animated.View
-                        entering={FadeIn.delay(Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
-                        style={styles.bustTint}
-                      />
-                    )}
-                    <Card
-                      card={c}
-                      status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
-                      disableIntroAnimation={false} // Let it animate in if it wasn't in pending
-                    />
-                  </View>
-                </Animated.View>
-              );
-            })
-          )}
-        </View>
       </View>
     </Animated.View>
   );
@@ -378,7 +523,41 @@ const styles = StyleSheet.create({
     minHeight: rem(7.5), // ~120px
     zIndex: 11,
   },
+  desktopCardsLayout: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: rem(0.65),
+    minHeight: rem(7),
+  },
+  modifierLane: {
+    minHeight: rem(7),
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.outlineVariant,
+    borderRadius: radius.md,
+    paddingHorizontal: rem(0.2),
+    paddingVertical: rem(0.35),
+  },
+  modifierLaneInner: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+  },
+  modifierChip: {
+    alignSelf: 'center',
+    minWidth: '100%',
+    paddingHorizontal: rem(0.35),
+  },
+  desktopNumberLane: {
+    flex: 1,
+    minWidth: 0,
+  },
   chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: rem(0.5),
+  },
+  desktopActionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: rem(0.5),
@@ -397,6 +576,9 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     // Wrapper for any layout animations
+  },
+  cardContent: {
+    position: 'relative',
   },
   bustTint: {
     position: 'absolute',

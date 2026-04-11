@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
 import { Stack } from 'expo-router';
 import Animated, { FadeIn, SlideInUp, SlideOutUp } from 'react-native-reanimated';
@@ -18,9 +18,19 @@ const DEMO_PLAYERS: PlayerInput[] = [
 ];
 
 export default function GameScreen() {
-  const { gameState, pendingDrawAnimation, initGame, playerHit, playerStay, selectActionTarget, startNewRound } = useGameStore();
+  const {
+    gameState,
+    pendingDrawAnimation,
+    displayedActivePlayerId,
+    initGame,
+    playerHit,
+    playerStay,
+    selectActionTarget,
+    startNewRound,
+  } = useGameStore();
 
   const deckRef = useRef<View>(null);
+  const [isRoundSummaryOpen, setIsRoundSummaryOpen] = useState(false);
 
   const currentPlayer = gameState ? gameState.players[gameState.currentPlayerIndex] : null;
   const humanPlayer = gameState?.players.find(p => !p.isBot);
@@ -31,6 +41,8 @@ export default function GameScreen() {
 
   const isHumanTurn = Boolean(currentPlayer && !currentPlayer.isBot);
   const canAct = isHumanTurn && !gameState?.pendingAction && !gameState?.roundOver && !gameState?.gameOver;
+  const showEndRoundButton = Boolean(gameState?.roundOver && !gameState?.gameOver);
+  const showRoundSummaryOverlay = Boolean(gameState?.gameOver || (gameState?.roundOver && isRoundSummaryOpen));
 
   const validTargetIds = new Set(
     (gameState?.players ?? [])
@@ -54,6 +66,12 @@ export default function GameScreen() {
   const hasFlip7 = gameState?.players.some(p => {
     return new Set(p.hand.filter(c => c.type === 'NUMBER').map(c => c.value)).size >= 7;
   }) ?? false;
+
+  useEffect(() => {
+    if (!gameState?.roundOver) {
+      setIsRoundSummaryOpen(false);
+    }
+  }, [gameState?.roundOver, gameState?.roundNumber]);
 
   // Render start screen if game not initialized
   if (!gameState) {
@@ -105,7 +123,8 @@ export default function GameScreen() {
                   <View style={styles.aiPlayerWrapper}>
                     <PlayerHand
                       player={focusedOpponent}
-                      isActive={currentPlayer?.id === focusedOpponent.id && gameState.phase === 'PLAYER_TURN'}
+                      isActive={displayedActivePlayerId === focusedOpponent.id && gameState.phase === 'PLAYER_TURN'}
+                      isMobile={isMobile}
                       pendingDrawAnimation={pendingDrawAnimation}
                       lastEvent={lastEvent}
                     />
@@ -119,7 +138,8 @@ export default function GameScreen() {
                 <View key={ai.id} style={styles.aiPlayerWrapper}>
                   <PlayerHand
                     player={ai}
-                    isActive={currentPlayer?.id === ai.id && gameState.phase === 'PLAYER_TURN'}
+                    isActive={displayedActivePlayerId === ai.id && gameState.phase === 'PLAYER_TURN'}
+                    isMobile={isMobile}
                     pendingDrawAnimation={pendingDrawAnimation}
                     lastEvent={lastEvent}
                   />
@@ -151,6 +171,26 @@ export default function GameScreen() {
             </View>
 
             {/* The slot where a card flips */}
+            {isFloatingCardVisible && pendingDrawAnimation && (
+              <Animated.View
+                style={[
+                  styles.floatingCardContainer,
+                  {
+                    opacity: pendingDrawAnimation.phase === 'fade' ? 0 : 1,
+                    transform: [
+                      { scale: pendingDrawAnimation.phase === 'spawn' ? 0.9 : 1 }
+                    ]
+                  }
+                ]}
+              >
+                <Card
+                  card={pendingDrawAnimation.card}
+                  isFaceDown={pendingDrawAnimation.phase === 'spawn'}
+                  disableIntroAnimation
+                  isBustCard={pendingDrawAnimation.eventKind === 'bust' || pendingDrawAnimation.eventKind === 'second_chance_used'}
+                />
+              </Animated.View>
+            )}
             <View style={styles.deckFlipSlot} />
           </View>
 
@@ -198,7 +238,8 @@ export default function GameScreen() {
           <View style={styles.humanArea}>
             <PlayerHand
               player={humanPlayer}
-              isActive={currentPlayer?.id === humanPlayer.id && gameState.phase === 'PLAYER_TURN'}
+              isActive={displayedActivePlayerId === humanPlayer.id && gameState.phase === 'PLAYER_TURN'}
+              isMobile={isMobile}
               pendingDrawAnimation={pendingDrawAnimation}
               lastEvent={lastEvent}
             />
@@ -209,37 +250,13 @@ export default function GameScreen() {
       {/* Flip 7 Celebration Overlay */}
       {hasFlip7 && <Flip7Celebration />}
 
-      {/* Floating Card Animation Overlay */}
-      {isFloatingCardVisible && pendingDrawAnimation && (
-        <Animated.View
-          style={[
-            styles.floatingCardContainer,
-            {
-              // Simple centered animation for RN for now - in a full port we'd measure destinations
-              // and interpolate x/y values
-              opacity: pendingDrawAnimation.phase === 'fade' ? 0 : 1,
-              transform: [
-                { scale: pendingDrawAnimation.phase === 'spawn' ? 0.9 : 1 },
-                // Just translating it a bit down for travel
-                { translateY: pendingDrawAnimation.phase === 'travel' ? 100 : 0 }
-              ]
-            }
-          ]}
-        >
-          <Card
-            card={pendingDrawAnimation.card}
-            isFaceDown={pendingDrawAnimation.phase === 'spawn'}
-            disableIntroAnimation
-            isBustCard={pendingDrawAnimation.eventKind === 'bust' || pendingDrawAnimation.eventKind === 'second_chance_used'}
-          />
-        </Animated.View>
-      )}
-
       {/* Footer Controls */}
       <View style={styles.footer}>
-        {gameState.phase === 'PLAYER_TURN' && !gameState.pendingAction && (
+        {showEndRoundButton ? (
+          <PrimaryButton label="End Round" onPress={() => setIsRoundSummaryOpen(true)} />
+        ) : gameState.phase === 'PLAYER_TURN' && !gameState.pendingAction ? (
           <View style={styles.controlsRow}>
-             <PrimaryButton
+            <PrimaryButton
               label="HIT"
               onPress={() => humanPlayer && playerHit(humanPlayer.id)}
               disabled={!canAct}
@@ -252,11 +269,11 @@ export default function GameScreen() {
               style={{ flex: 1 }}
             />
           </View>
-        )}
+        ) : null}
       </View>
 
       {/* Overlays */}
-      {(gameState.roundOver || gameState.gameOver) && (
+      {showRoundSummaryOverlay && (
         <Animated.View entering={FadeIn} style={styles.overlay}>
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>
@@ -287,7 +304,13 @@ export default function GameScreen() {
             </View>
 
             {gameState.roundOver && !gameState.gameOver ? (
-              <PrimaryButton label="Next Round" onPress={startNewRound} />
+              <PrimaryButton
+                label="Next Round"
+                onPress={() => {
+                  setIsRoundSummaryOpen(false);
+                  startNewRound();
+                }}
+              />
             ) : (
               <PrimaryButton label="Play Again" onPress={() => initGame(DEMO_PLAYERS, Date.now())} />
             )}
@@ -366,7 +389,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginVertical: rem(1),
     minHeight: rem(10),
-    gap: rem(1.5),
+    gap: rem(2),
   },
   deckContainer: {
     flexDirection: 'row',
@@ -417,6 +440,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceVariant,
     paddingVertical: rem(0.5),
     paddingHorizontal: rem(1),
+    marginTop: rem(0.5),
     borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.outlineVariant,
@@ -469,9 +493,8 @@ const styles = StyleSheet.create({
     gap: rem(1),
   },
   floatingCardContainer: {
-    position: 'absolute',
-    top: '40%', // simplified starting position
-    left: '40%',
+    // Positioned within deckContainer, adjacent to deckStack
+    marginLeft: rem(1.5), // Gap between deck and flip card
     zIndex: 100,
   },
   overlay: {
