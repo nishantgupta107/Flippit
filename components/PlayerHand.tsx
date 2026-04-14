@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { LayoutChangeEvent, View, Text, StyleSheet } from 'react-native';
+import { useEffect, useRef, forwardRef } from 'react';
+import { LayoutChangeEvent, View, Text, StyleSheet, Platform } from 'react-native';
 import { useState } from 'react';
 import Animated, {
   useSharedValue,
@@ -15,12 +15,13 @@ import { Card, Chip, ScoreHUD } from './ui';
 import { colors, radius } from '../constants/theme';
 import { rem } from '../utils/scaling';
 
-interface PlayerHandProps {
+export interface PlayerHandProps {
   player: PlayerState;
   isActive: boolean;
   isMobile: boolean;
   pendingDrawAnimation?: any;
   lastEvent?: { kind: string; playerId: string; card?: { id: string } };
+  onGhostPositionMeasured?: (position: { x: number; y: number } | null) => void;
 }
 
 const FREEZE_SHAKE_DURATION_MS = 500;
@@ -28,13 +29,76 @@ const BUST_WAVE_STEP_MS = 120;
 const BUST_CARD_TINT_DURATION_MS = 220;
 const BUST_SHAKE_DURATION_MS = 520;
 
-export function PlayerHand({
+interface AnimatedCardWrapperProps {
+  card: any;
+  index: number;
+  insertIndex: number;
+  cardWidth: number;
+  handGap: number;
+  hasSeenCard: boolean;
+  isBusted: boolean;
+  duplicateCardIndex: number;
+  hasBustWaveStarted: boolean;
+  player: PlayerState;
+  overlapOffset?: number;
+}
+
+function AnimatedCardWrapper({
+  card,
+  index,
+  cardWidth,
+  handGap,
+  hasSeenCard,
+  isBusted,
+  duplicateCardIndex,
+  hasBustWaveStarted,
+  player,
+  overlapOffset,
+}: AnimatedCardWrapperProps) {
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: []
+    };
+  });
+
+  return (
+    <Animated.View
+      layout={Layout.springify().damping(16).stiffness(200)}
+      entering={hasSeenCard ? undefined : FadeIn}
+      style={[
+        styles.cardWrapper,
+        animatedStyle,
+        {
+          marginLeft: overlapOffset ?? (index === 0 ? 0 : overlapOffset),
+          zIndex: index,
+        }
+      ]}
+    >
+      <View style={styles.cardContent}>
+        {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
+          <Animated.View
+            entering={FadeIn.delay(Math.abs(index - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
+            style={styles.bustTint}
+          />
+        )}
+        <Card
+          card={card}
+          status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
+          disableIntroAnimation={hasSeenCard}
+        />
+      </View>
+    </Animated.View>
+  );
+}
+
+export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand({
   player,
   isActive,
   isMobile,
   pendingDrawAnimation,
   lastEvent,
-}: PlayerHandProps) {
+  onGhostPositionMeasured,
+}, ref) {
   const [isFreezeBurstActive, setIsFreezeBurstActive] = useState(false);
   const [hasBustWaveStarted, setHasBustWaveStarted] = useState(false);
   const [isBustShakeActive, setIsBustShakeActive] = useState(false);
@@ -48,7 +112,9 @@ export function PlayerHand({
   const roundScore = player.roundScore;
   const isFrozen = player.outReason === 'FROZEN';
   const isBusted = player.outReason === 'BUSTED';
-  const numberCards = player.hand.filter(c => c.type === 'NUMBER');
+  const numberCards = player.hand
+    .filter(c => c.type === 'NUMBER')
+    .sort((a, b) => a.value - b.value || a.id.localeCompare(b.id));
   const modifierCards = player.hand
     .filter(c => c.type === 'MODIFIER_MULT' || c.type === 'MODIFIER_BONUS')
     .sort((a, b) => a.value - b.value || a.id.localeCompare(b.id));
@@ -245,11 +311,26 @@ export function PlayerHand({
     player.outReason === 'BUSTED' ? '💥' :
     player.outReason === 'FROZEN' ? '❄️' : '⚪';
 
-  // Omit the pending card from the base rendering so we can animate it floating in later
   const shouldOmitPendingCard = pendingDrawAnimation?.playerId === player.id;
+  const incomingCardId = pendingDrawAnimation?.card.id;
+  // Note: incomingCardValue can be used for debugging or future animations
+  void pendingDrawAnimation?.card.value;
+  
+  // Find where the card WILL be inserted in the sorted list
+  const insertIndex = (() => {
+    if (!shouldOmitPendingCard) return -1;
+    
+    const cardIdx = numberCards.findIndex(c => c.id === incomingCardId);
+    if (cardIdx !== -1) return cardIdx;
+    
+    // If it's not a number card (modifier/action), target the end of the number row
+    return numberCards.length;
+  })();
+
+
 
   const displayedNumberCards = shouldOmitPendingCard
-    ? numberCards.filter(c => c.id !== pendingDrawAnimation.card.id)
+    ? numberCards.filter(c => c.id !== incomingCardId)
     : numberCards;
 
   const displayedModifierCards = shouldOmitPendingCard
@@ -261,8 +342,48 @@ export function PlayerHand({
     : actionCards;
 
   const cardWidth = rem(5);
+  const cardHeight = rem(7);
   const handGap = rem(0.2);
   const minCascadeStep = rem(1.15);
+  
+  // Ghost card ref for measuring target position
+  const ghostCardRef = useRef<View>(null);
+  
+  // Measure ghost position and report to parent
+  useEffect(() => {
+    if (!shouldOmitPendingCard || insertIndex === -1) {
+      onGhostPositionMeasured?.(null);
+      return;
+    }
+    
+    // Small delay to allow layout to settle
+    const timeoutId = setTimeout(() => {
+      if (Platform.OS === 'web') {
+        const element = ghostCardRef.current as any;
+        if (element?.getBoundingClientRect) {
+          const rect = element.getBoundingClientRect();
+          onGhostPositionMeasured?.({ 
+            x: rect.left + rect.width / 2, 
+            y: rect.top + rect.height / 2 
+          });
+        }
+      } else {
+        const ghostNode = require('react-native').findNodeHandle(ghostCardRef.current);
+        if (ghostNode) {
+          const { UIManager } = require('react-native');
+          UIManager.measure(ghostNode, (_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) => {
+            onGhostPositionMeasured?.({ 
+              x: pageX + width / 2, 
+              y: pageY + height / 2 
+            });
+          });
+        }
+      }
+    }, 50);
+    
+    return () => clearTimeout(timeoutId);
+  }, [shouldOmitPendingCard, insertIndex, onGhostPositionMeasured]);
+  
   const chipHeightEstimate = rem(1.75);
   const modifierLaneWidth = rem(2.7);
   const modifierBaseGap = rem(0);
@@ -316,8 +437,15 @@ export function PlayerHand({
     });
   }, [displayedNumberCards]);
 
+  // Reset seen cards when hand is cleared (new round started)
+  useEffect(() => {
+    if (player.hand.length === 0) {
+      seenNumberCardIdsRef.current.clear();
+    }
+  }, [player.hand.length]);
+
   return (
-    <Animated.View style={[styles.container, containerAnimatedStyle]}>
+    <Animated.View ref={ref} style={[styles.container, containerAnimatedStyle]}>
       {shouldShowSecondChanceBorder && (
         <Animated.View style={secondChanceBorderStyle} />
       )}
@@ -357,41 +485,66 @@ export function PlayerHand({
             )}
 
             <View style={styles.numberRow}>
-              {displayedNumberCards.length === 0 ? (
+              {displayedNumberCards.length === 0 && insertIndex === -1 ? (
                 <Text style={styles.emptyText}>No cards drawn.</Text>
               ) : (
-                displayedNumberCards.map((c, i) => {
-                  const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
-
-                  return (
-                    <Animated.View
-                      key={c.id}
-                      layout={Layout.springify().damping(16).stiffness(200)}
-                      entering={hasSeenCard ? undefined : FadeIn}
+                <>
+                  {/* Render cards before ghost position */}
+                  {displayedNumberCards.slice(0, insertIndex === -1 ? displayedNumberCards.length : insertIndex).map((c, i) => {
+                    const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
+                    return (
+                      <AnimatedCardWrapper
+                        key={c.id}
+                        card={c}
+                        index={i}
+                        cardWidth={cardWidth}
+                        handGap={handGap}
+                        hasSeenCard={hasSeenCard}
+                        isBusted={isBusted}
+                        duplicateCardIndex={duplicateCardIndex}
+                        hasBustWaveStarted={hasBustWaveStarted}
+                        player={player}
+                        overlapOffset={i === 0 ? 0 : -rem(2)}
+                      />
+                    );
+                  })}
+                  
+                  {/* Ghost card at insert position */}
+                  {insertIndex !== -1 && (
+                    <View 
+                      ref={ghostCardRef}
                       style={[
-                        styles.cardWrapper,
-                        {
-                          marginLeft: i === 0 ? 0 : -rem(2),
-                          zIndex: i,
+                        styles.ghostCard,
+                        { 
+                          width: cardWidth, 
+                          height: cardHeight,
+                          marginLeft: insertIndex === 0 ? 0 : -rem(2),
                         }
-                      ]}
-                    >
-                      <View style={styles.cardContent}>
-                        {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
-                          <Animated.View
-                            entering={FadeIn.delay(Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
-                            style={styles.bustTint}
-                          />
-                        )}
-                        <Card
-                          card={c}
-                          status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
-                          disableIntroAnimation={hasSeenCard}
-                        />
-                      </View>
-                    </Animated.View>
-                  );
-                })
+                      ]} 
+                    />
+                  )}
+                  
+                  {/* Render cards after ghost position */}
+                  {insertIndex !== -1 && displayedNumberCards.slice(insertIndex).map((c, i) => {
+                    const actualIndex = insertIndex + i;
+                    const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
+                    return (
+                      <AnimatedCardWrapper
+                        key={c.id}
+                        card={c}
+                        index={actualIndex}
+                        cardWidth={cardWidth}
+                        handGap={handGap}
+                        hasSeenCard={hasSeenCard}
+                        isBusted={isBusted}
+                        duplicateCardIndex={duplicateCardIndex}
+                        hasBustWaveStarted={hasBustWaveStarted}
+                        player={player}
+                        overlapOffset={actualIndex === 0 ? 0 : -rem(2)}
+                      />
+                    );
+                  })}
+                </>
               )}
             </View>
           </>
@@ -424,41 +577,66 @@ export function PlayerHand({
 
             <View style={styles.desktopNumberLane} onLayout={handleNumberLaneLayout}>
               <View style={styles.numberRow}>
-                {displayedNumberCards.length === 0 ? (
+                {displayedNumberCards.length === 0 && insertIndex === -1 ? (
                   <Text style={styles.emptyText}>No cards drawn.</Text>
                 ) : (
-                  displayedNumberCards.map((c, i) => {
-                    const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
-
-                    return (
-                      <Animated.View
-                        key={c.id}
-                        layout={Layout.springify().damping(16).stiffness(200)}
-                        entering={hasSeenCard ? undefined : FadeIn}
+                  <>
+                    {/* Render cards before ghost position */}
+                    {displayedNumberCards.slice(0, insertIndex === -1 ? displayedNumberCards.length : insertIndex).map((c, i) => {
+                      const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
+                      return (
+                        <AnimatedCardWrapper
+                          key={c.id}
+                          card={c}
+                          index={i}
+                          cardWidth={cardWidth}
+                          handGap={handGap}
+                          hasSeenCard={hasSeenCard}
+                          isBusted={isBusted}
+                          duplicateCardIndex={duplicateCardIndex}
+                          hasBustWaveStarted={hasBustWaveStarted}
+                          player={player}
+                          overlapOffset={i === 0 ? 0 : cardSpacing}
+                        />
+                      );
+                    })}
+                    
+                    {/* Ghost card at insert position */}
+                    {insertIndex !== -1 && (
+                      <View 
+                        ref={ghostCardRef}
                         style={[
-                          styles.cardWrapper,
-                          {
-                            marginLeft: i === 0 ? 0 : cardSpacing,
-                            zIndex: i,
+                          styles.ghostCard,
+                          { 
+                            width: cardWidth, 
+                            height: cardHeight,
+                            marginLeft: insertIndex === 0 ? 0 : cardSpacing,
                           }
-                        ]}
-                      >
-                        <View style={styles.cardContent}>
-                          {isBusted && duplicateCardIndex !== -1 && hasBustWaveStarted && (
-                            <Animated.View
-                              entering={FadeIn.delay(Math.abs(i - duplicateCardIndex) * BUST_WAVE_STEP_MS).duration(BUST_CARD_TINT_DURATION_MS)}
-                              style={styles.bustTint}
-                            />
-                          )}
-                          <Card
-                            card={c}
-                            status={player.active || player.outReason === 'BUSTED' ? undefined : player.outReason?.toLowerCase()}
-                            disableIntroAnimation={hasSeenCard}
-                          />
-                        </View>
-                      </Animated.View>
-                    );
-                  })
+                        ]} 
+                      />
+                    )}
+                    
+                    {/* Render cards after ghost position */}
+                    {insertIndex !== -1 && displayedNumberCards.slice(insertIndex).map((c, i) => {
+                      const actualIndex = insertIndex + i;
+                      const hasSeenCard = seenNumberCardIdsRef.current.has(c.id);
+                      return (
+                        <AnimatedCardWrapper
+                          key={c.id}
+                          card={c}
+                          index={actualIndex}
+                          cardWidth={cardWidth}
+                          handGap={handGap}
+                          hasSeenCard={hasSeenCard}
+                          isBusted={isBusted}
+                          duplicateCardIndex={duplicateCardIndex}
+                          hasBustWaveStarted={hasBustWaveStarted}
+                          player={player}
+                          overlapOffset={actualIndex === 0 ? 0 : cardSpacing}
+                        />
+                      );
+                    })}
+                  </>
                 )}
               </View>
             </View>
@@ -477,7 +655,7 @@ export function PlayerHand({
       </View>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -586,5 +764,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: 'rgba(215, 56, 59, 0.4)',
     zIndex: 2,
+  },
+  ghostCard: {
+    // Invisible placeholder that occupies the exact space the flying card will land in
+    opacity: 0,
+    pointerEvents: 'none',
   },
 });

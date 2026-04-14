@@ -33,7 +33,11 @@ export function Card({
   const opacityAnim = useSharedValue(disableIntroAnimation ? 1 : 0);
 
   useEffect(() => {
-    flipAnim.value = withTiming(isFaceDown ? 180 : 0, { duration: DRAW_FLIP_DURATION_MS || 400 });
+    if (isFaceDown) {
+      flipAnim.value = 180;
+    } else {
+      flipAnim.value = withTiming(0, { duration: DRAW_FLIP_DURATION_MS || 400 });
+    }
   }, [isFaceDown, flipAnim]);
 
   useEffect(() => {
@@ -55,7 +59,9 @@ export function Card({
   const frontStyle = useAnimatedStyle(() => {
     return {
       transform: [
+
         { rotateY: `${flipAnim.value}deg` }
+
       ],
       zIndex: flipAnim.value < 90 ? 1 : 0,
       opacity: flipAnim.value < 90 ? 1 : 0, // Fallback for Android backfaceVisibility
@@ -65,7 +71,9 @@ export function Card({
   const backStyle = useAnimatedStyle(() => {
     return {
       transform: [
+
         { rotateY: `${flipAnim.value + 180}deg` }
+
       ],
       zIndex: flipAnim.value >= 90 ? 1 : 0,
       opacity: flipAnim.value >= 90 ? 1 : 0, // Fallback for Android backfaceVisibility
@@ -166,7 +174,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backfaceVisibility: 'hidden',
   },
   backFaceContainer: {
     borderWidth: 0,

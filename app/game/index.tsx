@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, useWindowDimensions, findNodeHandle, Platform } from 'react-native';
 import { Stack } from 'expo-router';
-import Animated, { FadeIn, SlideInUp, SlideOutUp } from 'react-native-reanimated';
+import Animated, { FadeIn, SlideInUp, SlideOutUp, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { colors, radius } from '../../constants/theme';
 import { PrimaryButton, SecondaryButton, TertiaryButton } from '../../components/ui';
 import { PlayerHand } from '../../components/PlayerHand';
 import { Card } from '../../components/ui/Card';
 import { Flip7Celebration } from '../../components/Flip7Celebration';
+import { OpponentConciseCard } from '../../components/game/OpponentConciseCard';
 import useGameStore from '../../store/gameStore';
 import type { PlayerInput } from '../../engine/types';
 import { rem } from '../../utils/scaling';
@@ -30,7 +31,52 @@ export default function GameScreen() {
   } = useGameStore();
 
   const deckRef = useRef<View>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
   const [isRoundSummaryOpen, setIsRoundSummaryOpen] = useState(false);
+
+  // Card flight measurement state
+  const [cardFlight, setCardFlight] = useState<{
+    visible: boolean;
+    card: any;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    phase: 'spawn' | 'flip' | 'travel' | 'fade';
+    isBustCard: boolean;
+  }>({
+    visible: false,
+    card: null,
+    startX: 0,
+    startY: 0,
+    endX: 0,
+    endY: 0,
+    phase: 'spawn',
+    isBustCard: false,
+  });
+
+  // Refs to measure target hand positions keyed by playerId
+  const handRefs = useRef<Map<string, View>>(new Map());
+
+  const setHandRef = useCallback((playerId: string, ref: View | null) => {
+    if (ref) {
+      handRefs.current.set(playerId, ref);
+    } else {
+      handRefs.current.delete(playerId);
+    }
+  }, []);
+
+  // Ghost positions for precise card flight targeting (keyed by playerId)
+  // Using ref to avoid infinite re-render loop - we only need latest value in measurement effect
+  const ghostPositionsRef = useRef<Map<string, { x: number; y: number } | null>>(new Map());
+
+  const handleGhostPositionMeasured = useCallback((playerId: string, position: { x: number; y: number } | null) => {
+    if (position) {
+      ghostPositionsRef.current.set(playerId, position);
+    } else {
+      ghostPositionsRef.current.delete(playerId);
+    }
+  }, []);
 
   const currentPlayer = gameState ? gameState.players[gameState.currentPlayerIndex] : null;
   const humanPlayer = gameState?.players.find(p => !p.isBot);
@@ -73,6 +119,165 @@ export default function GameScreen() {
     }
   }, [gameState?.roundOver, gameState?.roundNumber]);
 
+  // Reset card flight when new round starts (hands are cleared)
+  useEffect(() => {
+    if (gameState && gameState.roundNumber > 0) {
+      setCardFlight(prev => ({ ...prev, visible: false }));
+      // Reset the flight progress shared value so the next round's first card
+      // doesn't snap to position 1 (the end of the previous flight).
+      flightProgress.value = 0;
+      handRefs.current.clear();
+      ghostPositionsRef.current.clear();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.roundNumber]);
+
+  // Card flight animation values
+  const flightProgress = useSharedValue(0);
+  const flightPhase = useSharedValue<'spawn' | 'flip' | 'travel' | 'fade'>('spawn');
+
+  // Measure positions and start card flight animation
+  useEffect(() => {
+    if (!pendingDrawAnimation || !gameState) return;
+
+    if (pendingDrawAnimation.phase === 'spawn') {
+      setCardFlight(prev => ({ ...prev, visible: false }));
+    }
+
+    const measureAndAnimate = async () => {
+      // Small delay to allow ghost card to render and be measured
+      await new Promise(resolve => setTimeout(resolve, 60));
+
+      const targetHandRef = handRefs.current.get(pendingDrawAnimation.playerId);
+
+      // Measure deck position live. getBoundingClientRect on web is synchronous
+      // and reliable after the 60ms settle delay — no cached value is needed.
+      let deckPos: { x: number; y: number };
+
+      if (Platform.OS === 'web') {
+        const element = deckRef.current as any;
+        if (element?.getBoundingClientRect) {
+          const rect = element.getBoundingClientRect();
+          deckPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        } else {
+          deckPos = { x: 0, y: 0 };
+        }
+      } else {
+        const deckNode = findNodeHandle(deckRef.current);
+        if (!deckNode) return;
+        const { UIManager } = require('react-native');
+        deckPos = await new Promise<{ x: number; y: number }>((resolve) => {
+          UIManager.measure(deckNode, (_x: number, _y: number, w: number, h: number, pageX: number, pageY: number) => {
+            resolve({ x: pageX + w / 2, y: pageY + h / 2 });
+          });
+        });
+      }
+
+      // Get ghost position for precise targeting, or fall back to hand center
+      const ghostPos = ghostPositionsRef.current.get(pendingDrawAnimation.playerId);
+      let targetPos: { x: number; y: number };
+
+      if (ghostPos) {
+        // Use ghost position for precise slot targeting
+        targetPos = ghostPos;
+      } else {
+        // Fall back to estimating based on deck position
+        targetPos = { x: deckPos.x, y: deckPos.y + (humanPlayer?.id === pendingDrawAnimation.playerId ? 200 : -200) };
+
+        // Try measuring hand center as fallback
+        if (targetHandRef) {
+          if (Platform.OS === 'web') {
+            const element = targetHandRef as any;
+            if (element?.getBoundingClientRect) {
+              const rect = element.getBoundingClientRect();
+              targetPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+            }
+          } else {
+            const targetNode = findNodeHandle(targetHandRef);
+            if (targetNode) {
+              const { UIManager } = require('react-native');
+              targetPos = await new Promise<{ x: number; y: number }>((resolve) => {
+                UIManager.measure(targetNode, (_x: number, _y: number, w: number, h: number, pageX: number, pageY: number) => {
+                  resolve({ x: pageX + w / 2, y: pageY + h / 2 });
+                });
+              });
+            }
+          }
+        }
+      }
+
+      // Start the card flight
+      setCardFlight({
+        visible: true,
+        card: pendingDrawAnimation.card,
+        startX: deckPos.x,
+        startY: deckPos.y,
+        endX: targetPos.x,
+        endY: targetPos.y,
+        phase: pendingDrawAnimation.phase,
+        isBustCard: pendingDrawAnimation.eventKind === 'bust' || pendingDrawAnimation.eventKind === 'second_chance_used',
+      });
+    };
+
+    measureAndAnimate();
+  }, [pendingDrawAnimation, gameState, humanPlayer?.id]);
+
+  // Update flight phase and progress when pendingDrawAnimation changes
+  useEffect(() => {
+    if (!pendingDrawAnimation || !cardFlight.visible) return;
+
+    flightPhase.value = pendingDrawAnimation.phase;
+
+    if (pendingDrawAnimation.phase === 'travel') {
+      flightProgress.value = withTiming(1, { duration: 650 });
+    } else if (pendingDrawAnimation.phase === 'spawn') {
+      flightProgress.value = 0;
+    }
+
+    // Hide flight card when animation completes
+    if (pendingDrawAnimation.phase === 'fade' || !pendingDrawAnimation) {
+      setTimeout(() => {
+        setCardFlight(prev => ({ ...prev, visible: false }));
+      }, 500);
+    }
+  }, [pendingDrawAnimation, cardFlight.visible, flightPhase, flightProgress]);
+
+  // Global card flight style (positioned absolutely on screen)
+  const cardFlightStyle = useAnimatedStyle(() => {
+    if (!cardFlight.visible) return { opacity: 0 };
+
+    const progress = flightProgress.value;
+    const phase = flightPhase.value;
+
+    // Calculate position with arc
+    const startX = cardFlight.startX;
+    const startY = cardFlight.startY;
+    const endX = cardFlight.endX;
+    const endY = cardFlight.endY;
+
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+
+    // Linear interpolation
+    const x = startX + deltaX * progress;
+    const y = startY + deltaY * progress;
+
+    // Add arc offset (parabolic path)
+    const arcHeight = Math.min(Math.abs(deltaX), Math.abs(deltaY)) * 0.3;
+    const arcOffset = Math.sin(progress * Math.PI) * -arcHeight;
+
+    return {
+      position: 'absolute',
+      left: x - rem(2.5), // Center the card (half width)
+      top: y - rem(3.5) + arcOffset, // Center the card (half height) + arc
+      opacity: phase === 'fade' ? 1 - progress : 1,
+      zIndex: 10000,
+      transform: [
+        { scale: phase === 'spawn' ? 0.9 : 1 },
+      ],
+    };
+  });
+
   // Render start screen if game not initialized
   if (!gameState) {
     return (
@@ -86,47 +291,36 @@ export default function GameScreen() {
     );
   }
 
-  // Animation for the floating card
-  const isFloatingCardVisible = pendingDrawAnimation !== null;
+  // Note: card flight animation is now handled via cardFlight state and measure() API
 
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: 'Game', headerShown: false }} />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.scrollContent}>
         {/* Opponents Area */}
         {aiPlayers.length > 0 && (
           isMobile ? (() => {
-            // Mobile: Find the focused opponent. If an opponent's turn, it's them. Otherwise, first active opponent.
-            const focusedOpponent = aiPlayers.find(p => currentPlayer?.id === p.id) || aiPlayers.find(p => p.active) || aiPlayers[0];
-            const otherOpponents = aiPlayers.filter(p => p.id !== focusedOpponent?.id);
+            // Mobile 3-area layout: Top shows active opponent hand, edges show other opponents
+            // Find the opponent to show in top area: currently active player, or the player whose turn just ended
+            const activeOpponent = aiPlayers.find(p => p.id === displayedActivePlayerId && p.active);
+            // If displayed player is no longer active (just banked/busted), they are still the "last active"
+            const lastActiveOpponent = aiPlayers.find(p => p.id === displayedActivePlayerId) || aiPlayers.filter(p => p.active).pop() || aiPlayers[aiPlayers.length - 1];
+            const topOpponent = activeOpponent || lastActiveOpponent;
 
             return (
-              <View style={{ gap: rem(1) }}>
-                {/* Other opponents summary */}
-                {otherOpponents.length > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.miniOpponentsContainer}>
-                    {otherOpponents.map(p => (
-                      <View key={p.id} style={[styles.miniOpponent, p.active ? {} : styles.miniOpponentInactive]}>
-                        <Text style={styles.miniOpponentName}>{p.name}</Text>
-                        <Text style={styles.miniOpponentScore}>Score: {p.totalScore}</Text>
-                        <Text style={styles.miniOpponentStatus}>
-                          {p.active ? '🟢' : p.outReason === 'BANKED' ? '🏦' : p.outReason === 'BUSTED' ? '💥' : p.outReason === 'FROZEN' ? '❄️' : '⚪'}
-                        </Text>
-                      </View>
-                    ))}
-                  </ScrollView>
-                )}
-
-                {/* Focused Opponent */}
-                {focusedOpponent && (
-                  <View style={styles.aiPlayerWrapper}>
+              <View style={styles.mobileOpponentsContainer}>
+                {/* Top Area: Active opponent hand - changes based on whose turn it is */}
+                {topOpponent && (
+                  <View style={styles.mobileTopOpponent}>
                     <PlayerHand
-                      player={focusedOpponent}
-                      isActive={displayedActivePlayerId === focusedOpponent.id && gameState.phase === 'PLAYER_TURN'}
+                      ref={(ref) => setHandRef(topOpponent.id, ref)}
+                      player={topOpponent}
+                      isActive={displayedActivePlayerId === topOpponent.id && gameState.phase === 'PLAYER_TURN'}
                       isMobile={isMobile}
                       pendingDrawAnimation={pendingDrawAnimation}
                       lastEvent={lastEvent}
+                      onGhostPositionMeasured={(pos) => handleGhostPositionMeasured(topOpponent.id, pos)}
                     />
                   </View>
                 )}
@@ -137,11 +331,13 @@ export default function GameScreen() {
               {aiPlayers.map(ai => (
                 <View key={ai.id} style={styles.aiPlayerWrapper}>
                   <PlayerHand
+                    ref={(ref) => setHandRef(ai.id, ref)}
                     player={ai}
                     isActive={displayedActivePlayerId === ai.id && gameState.phase === 'PLAYER_TURN'}
                     isMobile={isMobile}
                     pendingDrawAnimation={pendingDrawAnimation}
                     lastEvent={lastEvent}
+                    onGhostPositionMeasured={(pos) => handleGhostPositionMeasured(ai.id, pos)}
                   />
                 </View>
               ))}
@@ -150,102 +346,125 @@ export default function GameScreen() {
         )}
 
         {/* Center Table (Draw Deck & Events) */}
-        <View style={styles.centerTable}>
-          <View style={styles.deckContainer}>
-            <View
-              ref={deckRef}
-              style={styles.deckStack}
-            >
-              {drawPileLength > 0 ? (
-                Array.from({ length: Math.min(5, Math.max(1, Math.ceil(drawPileLength / 10))) }).map((_, i) => (
-                  <View key={i} style={[styles.deckCardWrapper, { top: -i * 2, left: -i * 2, zIndex: i }]}>
-                    <Card isFaceDown disableIntroAnimation />
+        <View style={[styles.centerTable, isMobile && styles.mobileCenterTable]}>
+          {/* Mobile: Left edge opponent (if 3+ players) */}
+          {isMobile && (() => {
+            const activeOpponent = aiPlayers.find(p => p.id === displayedActivePlayerId && p.active);
+            const lastActiveOpponent = aiPlayers.find(p => p.id === displayedActivePlayerId) || aiPlayers.filter(p => p.active).pop() || aiPlayers[aiPlayers.length - 1];
+            const topOpponent = activeOpponent || lastActiveOpponent;
+            const otherOpponents = aiPlayers.filter(p => p.id !== topOpponent?.id);
+            return otherOpponents[0] ? (
+              <View style={styles.mobileLeftEdge}>
+                <OpponentConciseCard player={otherOpponents[0]} />
+              </View>
+            ) : null;
+          })()}
+
+          <View style={styles.deckSection}>
+            <View style={styles.deckContainer}>
+              <View
+                ref={deckRef}
+                style={styles.deckStack}
+              >
+                {drawPileLength > 0 ? (
+                  Array.from({ length: Math.min(5, Math.max(1, Math.ceil(drawPileLength / 10))) }).map((_, i) => (
+                    <View key={i} style={[styles.deckCardWrapper, { top: -i * 2, left: -i * 2, zIndex: i }]}>
+                      <Card isFaceDown disableIntroAnimation />
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.emptyDeck}>
+                    <Text style={styles.emptyDeckText}>Empty</Text>
                   </View>
-                ))
-              ) : (
-                <View style={styles.emptyDeck}>
-                  <Text style={styles.emptyDeckText}>Empty</Text>
-                </View>
-              )}
-              <Text style={styles.deckCount}>{drawPileLength} CARDS</Text>
+                )}
+                <Text style={styles.deckCount}>{drawPileLength} CARDS</Text>
+              </View>
+
+              <View style={styles.deckFlipSlot} />
             </View>
 
-            {/* The slot where a card flips */}
-            {isFloatingCardVisible && pendingDrawAnimation && (
+            {/* Event Toast */}
+            {lastEvent && lastEvent.kind !== 'round_end' && lastEvent.kind !== 'game_over' && (
               <Animated.View
-                style={[
-                  styles.floatingCardContainer,
-                  {
-                    opacity: pendingDrawAnimation.phase === 'fade' ? 0 : 1,
-                    transform: [
-                      { scale: pendingDrawAnimation.phase === 'spawn' ? 0.9 : 1 }
-                    ]
-                  }
-                ]}
+                entering={SlideInUp.springify().damping(20)}
+                exiting={SlideOutUp}
+                style={styles.eventToast}
               >
-                <Card
-                  card={pendingDrawAnimation.card}
-                  isFaceDown={pendingDrawAnimation.phase === 'spawn'}
-                  disableIntroAnimation
-                  isBustCard={pendingDrawAnimation.eventKind === 'bust' || pendingDrawAnimation.eventKind === 'second_chance_used'}
-                />
+                <Text style={styles.eventToastText}>
+                  <Text style={styles.eventToastBold}>
+                    {gameState.players.find((p) => p.id === lastEvent.playerId)?.name}:
+                  </Text>
+                  {' '}
+                  {lastEvent.message || (lastEvent.kind === 'card_drawn' ? `Drew ${lastEvent.card?.value || lastEvent.card?.type}` : lastEvent.kind.replace('_', ' '))}
+                </Text>
               </Animated.View>
             )}
-            <View style={styles.deckFlipSlot} />
+
+            {/* Action Target Picker */}
+            {gameState.pendingAction && gameState.pendingAction.actingPlayerId === humanPlayer?.id && (
+              <View style={styles.actionPicker}>
+                <Text style={styles.actionPickerTitle}>Select Target</Text>
+                <View style={styles.targetGrid}>
+                  {gameState.players.map((player) => {
+                    const isValid = validTargetIds.has(player.id);
+                    return (
+                      <TertiaryButton
+                        key={player.id}
+                        label={player.name}
+                        onPress={() => isValid && selectActionTarget(player.id)}
+                        disabled={!isValid}
+                        style={{ opacity: isValid ? 1 : 0.5, flex: 1 }}
+                      />
+                    );
+                  })}
+                </View>
+              </View>
+            )}
           </View>
 
-          {/* Event Toast */}
-          {lastEvent && lastEvent.kind !== 'round_end' && lastEvent.kind !== 'game_over' && (
-            <Animated.View
-              entering={SlideInUp.springify().damping(20)}
-              exiting={SlideOutUp}
-              style={styles.eventToast}
-            >
-              <Text style={styles.eventToastText}>
-                <Text style={styles.eventToastBold}>
-                  {gameState.players.find((p) => p.id === lastEvent.playerId)?.name}:
-                </Text>
-                {' '}
-                {lastEvent.message || (lastEvent.kind === 'card_drawn' ? `Drew ${lastEvent.card?.value || lastEvent.card?.type}` : lastEvent.kind.replace('_', ' '))}
-              </Text>
-            </Animated.View>
-          )}
-
-          {/* Action Target Picker */}
-          {gameState.pendingAction && gameState.pendingAction.actingPlayerId === humanPlayer?.id && (
-            <View style={styles.actionPicker}>
-              <Text style={styles.actionPickerTitle}>Select Target</Text>
-              <View style={styles.targetGrid}>
-                {gameState.players.map((player) => {
-                  const isValid = validTargetIds.has(player.id);
-                  return (
-                    <TertiaryButton
-                      key={player.id}
-                      label={player.name}
-                      onPress={() => isValid && selectActionTarget(player.id)}
-                      disabled={!isValid}
-                      style={{ opacity: isValid ? 1 : 0.5, flex: 1 }}
-                    />
-                  );
-                })}
+          {/* Mobile: Right edge opponent (if 4 players) */}
+          {isMobile && (() => {
+            const activeOpponent = aiPlayers.find(p => p.id === displayedActivePlayerId && p.active);
+            const lastActiveOpponent = aiPlayers.find(p => p.id === displayedActivePlayerId) || aiPlayers.filter(p => p.active).pop() || aiPlayers[aiPlayers.length - 1];
+            const topOpponent = activeOpponent || lastActiveOpponent;
+            const otherOpponents = aiPlayers.filter(p => p.id !== topOpponent?.id);
+            return otherOpponents[1] ? (
+              <View style={styles.mobileRightEdge}>
+                <OpponentConciseCard player={otherOpponents[1]} />
               </View>
-            </View>
-          )}
+            ) : null;
+          })()}
         </View>
 
         {/* Human Area */}
         {humanPlayer && (
           <View style={styles.humanArea}>
             <PlayerHand
+              ref={(ref) => setHandRef(humanPlayer.id, ref)}
               player={humanPlayer}
               isActive={displayedActivePlayerId === humanPlayer.id && gameState.phase === 'PLAYER_TURN'}
               isMobile={isMobile}
               pendingDrawAnimation={pendingDrawAnimation}
               lastEvent={lastEvent}
+              onGhostPositionMeasured={(pos) => handleGhostPositionMeasured(humanPlayer.id, pos)}
             />
           </View>
         )}
+
       </ScrollView>
+
+      {/* Global Card Flight Overlay - Rendered at root level for cross-container animation */}
+      {cardFlight.visible && (
+        <Animated.View style={cardFlightStyle} pointerEvents="none">
+          <Card
+            key={cardFlight.card?.id || 'flight-card'}
+            card={cardFlight.card}
+            isFaceDown={cardFlight.phase === 'spawn'}
+            disableIntroAnimation
+            isBustCard={cardFlight.isBustCard}
+          />
+        </Animated.View>
+      )}
 
       {/* Flip 7 Celebration Overlay */}
       {hasFlip7 && <Flip7Celebration />}
@@ -344,6 +563,35 @@ const styles = StyleSheet.create({
     paddingBottom: rem(8), // Room for footer
     gap: rem(1.5),
   },
+  // Mobile 3-area layout styles
+  mobileOpponentsContainer: {
+    width: '100%',
+  },
+  mobileTopOpponent: {
+    width: '100%',
+  },
+  mobileCenterTable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: rem(0.5),
+    marginVertical: rem(1),
+    minHeight: rem(12),
+    zIndex: 999,
+  },
+  mobileLeftEdge: {
+    flexShrink: 0,
+  },
+  mobileRightEdge: {
+    flexShrink: 0,
+  },
+  deckSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: rem(2),
+  },
   aiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -390,6 +638,7 @@ const styles = StyleSheet.create({
     marginVertical: rem(1),
     minHeight: rem(10),
     gap: rem(2),
+    zIndex: 999, // Elevation for the flying card
   },
   deckContainer: {
     flexDirection: 'row',
@@ -492,10 +741,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: rem(1),
   },
-  floatingCardContainer: {
-    // Positioned within deckContainer, adjacent to deckStack
-    marginLeft: rem(1.5), // Gap between deck and flip card
-    zIndex: 100,
+  cardFlightOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    pointerEvents: 'none',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
