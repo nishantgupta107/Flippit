@@ -434,25 +434,37 @@ describe('pending actions and score application', () => {
     );
   });
 
-  it('starts a new round with reset per-round state', () => {
+  it('starts a new round with reset per-round state and preserves deck/discard', () => {
+    const initialDeck = buildDeck(9);
+    const initialDiscard = [{ id: 'ACTION_FREEZE_1', type: 'ACTION_FREEZE' as const, value: 0 }];
+    const playerHandCards = [{ id: 'NUMBER_7_1', type: 'NUMBER' as const, value: 7 }];
     const state = createState({
       players: createState().players.map((player) => ({
         ...player,
-        hand: [{ id: 'NUMBER_7_1', type: 'NUMBER', value: 7 }],
+        hand: playerHandCards,
         roundScore: 7,
         active: false,
         hasBanked: true,
         hasShield: true,
       })),
       roundNumber: 1,
-      deck: buildDeck(9),
+      deck: initialDeck,
+      discardPile: initialDiscard,
     });
 
     const nextState = startNewRound(state);
     expect(nextState.roundNumber).toBe(2);
     expect(nextState.players.every((player) => player.hand.length === 0)).toBe(true);
     expect(nextState.players.every((player) => player.active)).toBe(true);
-    expect(nextState.deck).toHaveLength(94);
+    // Deck should be preserved between rounds (not reshuffled)
+    expect(nextState.deck).toBe(initialDeck);
+    // Cards from player hands should be added to discard pile
+    const expectedCardsFromHands = state.players.length * playerHandCards.length;
+    expect(nextState.discardPile.length).toBe(initialDiscard.length + expectedCardsFromHands);
+    expect(nextState.discardPile.slice(0, initialDiscard.length)).toEqual(initialDiscard);
+    expect(nextState.discardPile.slice(initialDiscard.length)).toEqual(
+      expect.arrayContaining(state.players.flatMap(() => playerHandCards))
+    );
   });
 
   it('advances to the next player or ends the round when no active players remain', () => {

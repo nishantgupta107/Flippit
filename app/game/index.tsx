@@ -106,6 +106,9 @@ export default function GameScreen() {
               Hand: {currentPlayer?.hand.map((card) => card.id).join(', ') || 'No cards yet'}
             </Text>
             <Text style={styles.panelBody}>Round Score: {currentPlayer?.roundScore ?? 0}</Text>
+            <Text style={styles.panelBody}>
+              Deck: {gameState.deck.length} • Discard: {gameState.discardPile.length}
+            </Text>
           </View>
 
           <View style={styles.buttonGroup}>

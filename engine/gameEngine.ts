@@ -424,6 +424,9 @@ export function startNewRound(state: GameState): GameState {
   const nextRoundNumber = state.roundNumber + 1;
   const roundSeed = createRoundSeed(state.seed, nextRoundNumber);
 
+  // Collect all cards from player hands to add to discard pile
+  const cardsFromHands = state.players.flatMap((player) => player.hand);
+
   return {
     ...state,
     phase: 'DEALING',
@@ -436,8 +439,10 @@ export function startNewRound(state: GameState): GameState {
       hasShield: false,
       outReason: undefined,
     })),
-    deck: buildDeck(roundSeed),
-    discardPile: [],
+    // Preserve deck between rounds - only reshuffle when deck is empty
+    deck: state.deck,
+    // Add cards from player hands to discard pile so they can be recycled
+    discardPile: [...state.discardPile, ...cardsFromHands],
     roundNumber: nextRoundNumber,
     roundSeed,
     roundOver: false,
