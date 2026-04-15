@@ -141,6 +141,7 @@ export default function GameScreen() {
     if (!pendingDrawAnimation || !gameState) return;
 
     if (pendingDrawAnimation.phase === 'spawn') {
+      flightProgress.value = 0;
       setCardFlight(prev => ({ ...prev, visible: false }));
     }
 
@@ -229,7 +230,8 @@ export default function GameScreen() {
     flightPhase.value = pendingDrawAnimation.phase;
 
     if (pendingDrawAnimation.phase === 'travel') {
-      flightProgress.value = withTiming(1, { duration: 650 });
+      const isSecondChance = pendingDrawAnimation.eventKind === 'second_chance_used';
+      flightProgress.value = withTiming(isSecondChance ? 0.6 : 1, { duration: isSecondChance ? 390 : 650 });
     } else if (pendingDrawAnimation.phase === 'spawn') {
       flightProgress.value = 0;
     }

@@ -11,7 +11,6 @@ import Animated, {
   FadeIn,
   useDerivedValue,
   interpolate,
-  withDelay,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PlayerState } from '../engine/types';
@@ -40,9 +39,6 @@ const BUST_SHAKE_DURATION_MS = 520;
 interface AnimatedCardWrapperProps {
   card: any;
   index: number;
-  insertIndex: number;
-  cardWidth: number;
-  handGap: number;
   hasSeenCard: boolean;
   isBusted: boolean;
   duplicateCardIndex: number;
@@ -56,8 +52,6 @@ interface AnimatedCardWrapperProps {
 function AnimatedCardWrapper({
   card,
   index,
-  cardWidth,
-  handGap,
   hasSeenCard,
   isBusted,
   duplicateCardIndex,
@@ -150,7 +144,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
     .sort((a, b) => a.value - b.value || a.id.localeCompare(b.id));
   const actionCards = player.hand.filter(c => c.type.startsWith('ACTION_'));
 
-  const hasSecondChance = actionCards.some(c => c.type === 'ACTION_SECOND_CHANCE');
+  const hasSecondChance = player.hasShield;
   const isFlip7 = new Set(numberCards.map(c => c.value)).size >= 7;
 
   const isNewBustEvent = lastEvent?.kind === 'bust' && lastEvent.playerId === player.id;
@@ -166,7 +160,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
     pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.eventKind === 'bust';
   const isPendingSecondChanceExit =
     pendingDrawAnimation?.playerId === player.id && pendingDrawAnimation.eventKind === 'second_chance_used';
-  const shouldShowSecondChanceBorder = hasSecondChance || isSecondChanceExitActive;
+  const shouldShowSecondChanceBorder = (hasSecondChance || isSecondChanceExitActive) && !isFrozen && player.outReason !== 'BANKED';
 
   useEffect(() => {
     if (isPendingSecondChanceExit) {
@@ -329,13 +323,12 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
   }, [shouldShowSecondChanceBorder, borderPulse]);
 
   const containerAnimatedStyle = useAnimatedStyle(() => {
-    let borderColor = isActive ? colors.primary : colors.outlineVariant;
+    let borderColor: string = isActive ? colors.primary : colors.outlineVariant;
     let borderWidth = isActive ? 2 : 1;
 
-    // Reanimated doesn't support complex box-shadow interpolation well in RN natively via useAnimatedStyle simply,
-    // so we interpolate the border color and width instead.
+    // Simulate glowing teal border when shield is active
     if (shouldShowSecondChanceBorder) {
-      // Simulate glowing #86efac
+      borderColor = '#86efac';
       borderWidth = 2;
     }
 
@@ -353,9 +346,14 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
 
   const secondChanceBorderStyle = useAnimatedStyle(() => {
     return {
-      opacity: borderPulse.value,
+      opacity: interpolate(borderPulse.value, [0, 1], [0.3, 1]),
       borderWidth: 2,
       borderColor: '#86efac',
+      shadowColor: '#86efac',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.8,
+      shadowRadius: 8,
+      elevation: 4,
       ...StyleSheet.absoluteFillObject,
       borderRadius: radius.lg,
     };
@@ -582,8 +580,6 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                         key={c.id}
                         card={c}
                         index={i}
-                        cardWidth={cardWidth}
-                        handGap={handGap}
                         hasSeenCard={hasSeenCard}
                         isBusted={isBusted}
                         duplicateCardIndex={duplicateCardIndex}
@@ -620,8 +616,6 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                         key={c.id}
                         card={c}
                         index={actualIndex}
-                        cardWidth={cardWidth}
-                        handGap={handGap}
                         hasSeenCard={hasSeenCard}
                         isBusted={isBusted}
                         duplicateCardIndex={duplicateCardIndex}
@@ -678,8 +672,6 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                           key={c.id}
                           card={c}
                           index={i}
-                          cardWidth={cardWidth}
-                          handGap={handGap}
                           hasSeenCard={hasSeenCard}
                           isBusted={isBusted}
                           duplicateCardIndex={duplicateCardIndex}
@@ -716,8 +708,6 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                           key={c.id}
                           card={c}
                           index={actualIndex}
-                          cardWidth={cardWidth}
-                          handGap={handGap}
                           hasSeenCard={hasSeenCard}
                           isBusted={isBusted}
                           duplicateCardIndex={duplicateCardIndex}
