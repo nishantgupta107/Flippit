@@ -130,7 +130,14 @@ function applyFreezeTarget(state: GameState, targetPlayerId: string): GameState 
     outReason: 'FROZEN',
   });
 
-  return syncPhase(clearPendingAction(nextState));
+  return syncPhase({
+    ...clearPendingAction(nextState),
+    lastEvent: {
+      kind: 'freeze',
+      playerId: targetPlayerId,
+      message: 'Frozen!',
+    },
+  });
 }
 
 function resolveFlipThreeTarget(state: GameState, targetPlayerId: string): GameState {
@@ -171,11 +178,25 @@ function resolveSecondChanceTarget(state: GameState, targetPlayerId: string): Ga
     const nextState = updatePlayer(clearPendingAction(state), target.id, {
       hasShield: true,
     });
-    return syncPhase(nextState);
+    return syncPhase({
+      ...nextState,
+      lastEvent: {
+        kind: 'second_chance_passed',
+        playerId: target.id,
+        message: 'Second Chance received!',
+      },
+    });
   }
 
   if (activeCount <= 1 || nextPassCount >= activeCount || activeCount === activePlayers(state).filter(p => p.hasShield).length) {
-    return syncPhase(clearPendingAction(state));
+    return syncPhase({
+      ...clearPendingAction(state),
+      lastEvent: {
+        kind: 'second_chance_discarded',
+        playerId: pendingAction.actingPlayerId,
+        message: 'Second Chance discarded!',
+      },
+    });
   }
 
   return syncPhase({
@@ -296,7 +317,14 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
         hasBanked: true,
         outReason: 'FROZEN',
       });
-      return syncPhase(nextState);
+      return syncPhase({
+        ...nextState,
+        lastEvent: {
+          kind: 'freeze',
+          playerId,
+          message: 'Frozen!',
+        },
+      });
     }
 
     return syncPhase({
@@ -341,17 +369,31 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
           hand: player.hand,
           hasShield: false, // Update "Shield No"
         });
-        return syncPhase(savedState);
+        return syncPhase({
+          ...savedState,
+          lastEvent: {
+            kind: 'second_chance_used',
+            playerId,
+            card,
+            message: 'Second Chance used!',
+          },
+        });
       }
 
-      return syncPhase(
-        updatePlayer(nextState, playerId, {
+      return syncPhase({
+        ...updatePlayer(nextState, playerId, {
           roundScore: 0,
           active: false,
           hasBanked: true,
           outReason: 'BUSTED',
-        })
-      );
+        }),
+        lastEvent: {
+          kind: 'bust',
+          playerId,
+          card,
+          message: 'Busted!',
+        },
+      });
     }
 
     if (numberCards.length >= 7) {
