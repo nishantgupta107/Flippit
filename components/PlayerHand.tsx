@@ -8,12 +8,16 @@ import Animated, {
   withSequence,
   withRepeat,
   Layout,
-  FadeIn
+  FadeIn,
+  useDerivedValue,
+  interpolate,
+  withDelay,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { PlayerState } from '../engine/types';
 import { Card, Chip, ScoreHUD } from './ui';
 import { colors, radius } from '../constants/theme';
-import { rem } from '../utils/scaling';
+import { rem, vw, vh } from '../utils/scaling';
 
 export interface PlayerHandProps {
   player: PlayerState;
@@ -24,7 +28,11 @@ export interface PlayerHandProps {
   onGhostPositionMeasured?: (position: { x: number; y: number } | null) => void;
 }
 
-const FREEZE_SHAKE_DURATION_MS = 500;
+const FREEZE_STAGGER_MS = 60;
+const FREEZE_ROTATION_DURATION_MS = 400;
+const FREEZE_ICE_DURATION_MS = 1000;
+const FREEZE_SHINE_DURATION_MS = 600;
+const FREEZE_SHAKE_DURATION_MS = 1000;
 const BUST_WAVE_STEP_MS = 120;
 const BUST_CARD_TINT_DURATION_MS = 220;
 const BUST_SHAKE_DURATION_MS = 520;
@@ -41,6 +49,8 @@ interface AnimatedCardWrapperProps {
   hasBustWaveStarted: boolean;
   player: PlayerState;
   overlapOffset?: number;
+  isFrozen?: boolean;
+  freezeProgress: Animated.SharedValue<number>;
 }
 
 function AnimatedCardWrapper({
@@ -54,10 +64,29 @@ function AnimatedCardWrapper({
   hasBustWaveStarted,
   player,
   overlapOffset,
+  isFrozen,
+  freezeProgress,
 }: AnimatedCardWrapperProps) {
+  const rotation = useDerivedValue(() => {
+    if (!isFrozen) return 0;
+    // Sequential domino effect: cards start rotating one by one
+    // We map freezeProgress (0-1) to card rotation (0-90)
+    const start = (index * FREEZE_STAGGER_MS) / (FREEZE_ICE_DURATION_MS + (player.hand.length * FREEZE_STAGGER_MS));
+    const end = start + (FREEZE_ROTATION_DURATION_MS / (FREEZE_ICE_DURATION_MS + (player.hand.length * FREEZE_STAGGER_MS)));
+    
+    return interpolate(
+      freezeProgress.value,
+      [start, Math.min(1, end)],
+      [0, 90],
+      'clamp'
+    );
+  });
+
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      transform: []
+      transform: [
+        { rotateZ: `${rotation.value}deg` }
+      ]
     };
   });
 
@@ -102,6 +131,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
   const [isFreezeBurstActive, setIsFreezeBurstActive] = useState(false);
   const [hasBustWaveStarted, setHasBustWaveStarted] = useState(false);
   const [isBustShakeActive, setIsBustShakeActive] = useState(false);
+  const [isFreezeShakeActive, setIsFreezeShakeActive] = useState(false);
   const [isSecondChanceExitActive, setIsSecondChanceExitActive] = useState(false);
   const [numberLaneWidth, setNumberLaneWidth] = useState(0);
   const [modifierLaneHeight, setModifierLaneHeight] = useState(0);
@@ -202,26 +232,52 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
   const shakeTranslateY = useSharedValue(0);
   const flip7Scale = useSharedValue(1);
   const borderPulse = useSharedValue(0);
+  const freezeProgress = useSharedValue(0); // 0 to 1
+  const shineProgress = useSharedValue(0); // 0 to 1
 
   useEffect(() => {
-    if (isFreezeBurstActive) {
-      shakeTranslateX.value = withSequence(
-        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
-        withTiming(-2, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
-        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
-        withTiming(-1, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
-        withTiming(1, { duration: FREEZE_SHAKE_DURATION_MS / 6 }),
-        withTiming(0, { duration: FREEZE_SHAKE_DURATION_MS / 6 })
-      );
-      shakeTranslateY.value = withSequence(
-        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
-        withTiming(0, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
-        withTiming(-1, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
-        withTiming(2, { duration: FREEZE_SHAKE_DURATION_MS / 5 }),
-        withTiming(0, { duration: FREEZE_SHAKE_DURATION_MS / 5 })
-      );
+    if (isFrozen && freezeProgress.value < 1) {
+      setIsFreezeShakeActive(true);
+      // Start sequential domino and ice build-up
+      freezeProgress.value = withTiming(1, { duration: FREEZE_ICE_DURATION_MS + (numberCards.length * FREEZE_STAGGER_MS) }, () => {
+        // Once ice is solid, stop shaking and run shine sweep
+        require('react-native-reanimated').runOnJS(setIsFreezeShakeActive)(false);
+        shineProgress.value = withTiming(1, { duration: FREEZE_SHINE_DURATION_MS });
+      });
+    } else if (!isFrozen) {
+      freezeProgress.value = 0;
+      shineProgress.value = 0;
+      setIsFreezeShakeActive(false);
     }
-  }, [isFreezeBurstActive, shakeTranslateX, shakeTranslateY]);
+  }, [isFrozen, numberCards.length, freezeProgress, shineProgress]);
+
+  useEffect(() => {
+    if (isFreezeBurstActive || isFreezeShakeActive) {
+      shakeTranslateX.value = withSequence(
+        withTiming(2, { duration: 100 }),
+        withTiming(-2, { duration: 100 }),
+        withRepeat(
+          withSequence(
+            withTiming(2, { duration: 100 }),
+            withTiming(-2, { duration: 100 })
+          ),
+          -1,
+          true
+        )
+      );
+      shakeTranslateY.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 80 }),
+          withTiming(-1, { duration: 80 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      shakeTranslateX.value = withTiming(0);
+      shakeTranslateY.value = withTiming(0);
+    }
+  }, [isFreezeBurstActive, isFreezeShakeActive, shakeTranslateX, shakeTranslateY]);
 
   useEffect(() => {
     if (isBustShakeActive) {
@@ -302,6 +358,22 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
       borderColor: '#86efac',
       ...StyleSheet.absoluteFillObject,
       borderRadius: radius.lg,
+    };
+  });
+
+  const iceOverlayStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(freezeProgress.value, [0, 1], [0, 1]),
+    };
+  });
+
+  const shineStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: interpolate(shineProgress.value, [0, 1], [-vw(50), vw(100)]) },
+        { skewX: '-20deg' }
+      ],
+      opacity: interpolate(shineProgress.value, [0, 0.1, 0.9, 1], [0, 1, 1, 0]),
     };
   });
 
@@ -451,9 +523,22 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
       )}
 
       {isFrozen && (
-        <View style={styles.frozenOverlay}>
-          {/* Simple blue tint for frozen state instead of complex SVG filter */}
-        </View>
+        <Animated.View style={[styles.frozenOverlay, iceOverlayStyle]} pointerEvents="none">
+          <LinearGradient
+            colors={['rgba(104, 211, 255, 0.4)', 'rgba(255, 255, 255, 0.6)', 'rgba(104, 211, 255, 0.5)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Animated.View style={[styles.shineSweep, shineStyle]}>
+            <LinearGradient
+              colors={['transparent', 'rgba(255, 255, 255, 0.8)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </Animated.View>
       )}
 
       {/* Header */}
@@ -505,6 +590,8 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                         hasBustWaveStarted={hasBustWaveStarted}
                         player={player}
                         overlapOffset={i === 0 ? 0 : -rem(2)}
+                        isFrozen={isFrozen}
+                        freezeProgress={freezeProgress}
                       />
                     );
                   })}
@@ -541,6 +628,8 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                         hasBustWaveStarted={hasBustWaveStarted}
                         player={player}
                         overlapOffset={actualIndex === 0 ? 0 : -rem(2)}
+                        isFrozen={isFrozen}
+                        freezeProgress={freezeProgress}
                       />
                     );
                   })}
@@ -597,6 +686,8 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                           hasBustWaveStarted={hasBustWaveStarted}
                           player={player}
                           overlapOffset={i === 0 ? 0 : cardSpacing}
+                          isFrozen={isFrozen}
+                          freezeProgress={freezeProgress}
                         />
                       );
                     })}
@@ -633,6 +724,8 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                           hasBustWaveStarted={hasBustWaveStarted}
                           player={player}
                           overlapOffset={actualIndex === 0 ? 0 : cardSpacing}
+                          isFrozen={isFrozen}
+                          freezeProgress={freezeProgress}
                         />
                       );
                     })}
@@ -670,9 +763,16 @@ const styles = StyleSheet.create({
   },
   frozenOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(104, 211, 255, 0.2)',
     zIndex: 20,
-    pointerEvents: 'none',
+    overflow: 'hidden',
+  },
+  shineSweep: {
+    position: 'absolute',
+    top: -vh(20),
+    bottom: -vh(20),
+    width: rem(8),
+    backgroundColor: 'transparent',
+    zIndex: 21,
   },
   header: {
     flexDirection: 'row',
