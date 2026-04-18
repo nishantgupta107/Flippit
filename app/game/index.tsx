@@ -8,6 +8,7 @@ import { PlayerHand } from '../../components/PlayerHand';
 import { Card } from '../../components/ui/Card';
 import { Flip7Celebration } from '../../components/Flip7Celebration';
 import { OpponentConciseCard } from '../../components/game/OpponentConciseCard';
+import { FlipThreeOverlay } from '../../components/game/FlipThreeOverlay';
 import useGameStore from '../../store/gameStore';
 import type { PlayerInput } from '../../engine/types';
 import { rem } from '../../utils/scaling';
@@ -402,8 +403,11 @@ export default function GameScreen() {
               </Animated.View>
             )}
 
-            {/* Action Target Picker */}
-            {gameState.pendingAction && gameState.pendingAction.actingPlayerId === humanPlayer?.id && (
+            {/* Action Target Picker — Freeze & Second Chance only.
+                 Flip Three is handled by the dedicated FlipThreeOverlay. */}
+            {gameState.pendingAction &&
+             gameState.pendingAction.type !== 'FLIP_THREE_TARGET' &&
+             gameState.pendingAction.actingPlayerId === humanPlayer?.id && (
               <View style={styles.actionPicker}>
                 <Text style={styles.actionPickerTitle}>Select Target</Text>
                 <View style={styles.targetGrid}>
@@ -467,6 +471,9 @@ export default function GameScreen() {
           />
         </Animated.View>
       )}
+
+      {/* Flip Three card-reveal overlay — self-contained, manages own visibility */}
+      <FlipThreeOverlay />
 
       {/* Flip 7 Celebration Overlay */}
       {hasFlip7 && <Flip7Celebration />}

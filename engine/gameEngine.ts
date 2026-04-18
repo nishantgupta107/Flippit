@@ -561,6 +561,24 @@ export function advanceToNextPlayer(state: GameState): GameState {
   });
 }
 
+/**
+ * Applies a freeze to `targetPlayerId` without advancing the turn.
+ * Used by the FlipThree overlay state machine when a Freeze card is
+ * encountered mid-reveal and the user selects a sub-target.
+ */
+export function applyFreezeEffect(state: GameState, targetPlayerId: string): GameState {
+  return applyFreezeTarget(state, targetPlayerId);
+}
+
+/**
+ * Resolves a Second Chance pass to `targetPlayerId` without advancing the turn.
+ * Used by the FlipThree overlay state machine when a Second Chance card
+ * requires passing the shield to another player mid-reveal.
+ */
+export function resolveSecondChanceEffect(state: GameState, targetPlayerId: string): GameState {
+  return resolveSecondChanceTarget(state, targetPlayerId);
+}
+
 export function drawForPlayer(state: GameState, playerId: string): GameState {
   const drawResult = drawFromState(state);
 
