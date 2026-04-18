@@ -11,6 +11,7 @@ import Animated, {
   FadeIn,
   useDerivedValue,
   interpolate,
+  withDelay,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { PlayerState } from '../engine/types';
@@ -47,6 +48,7 @@ interface AnimatedCardWrapperProps {
   overlapOffset?: number;
   isFrozen?: boolean;
   freezeProgress: Animated.SharedValue<number>;
+  isFlip7: boolean;
 }
 
 function AnimatedCardWrapper({
@@ -60,7 +62,28 @@ function AnimatedCardWrapper({
   overlapOffset,
   isFrozen,
   freezeProgress,
+  isFlip7,
 }: AnimatedCardWrapperProps) {
+  const flip7TranslateY = useSharedValue(0);
+
+  useEffect(() => {
+    if (isFlip7) {
+      flip7TranslateY.value = withDelay(
+        index * 120, // Staggered delay for Mexican wave
+        withRepeat(
+          withSequence(
+            withTiming(-20, { duration: 250 }),
+            withTiming(0, { duration: 250 }),
+            withTiming(0, { duration: 500 })
+          ),
+          -1,
+          false
+        )
+      );
+    } else {
+      flip7TranslateY.value = withTiming(0);
+    }
+  }, [isFlip7, index, flip7TranslateY]);
   const rotation = useDerivedValue(() => {
     if (!isFrozen) return 0;
     // Sequential domino effect: cards start rotating one by one
@@ -79,7 +102,8 @@ function AnimatedCardWrapper({
   const animatedStyle = useAnimatedStyle(() => {
     return {
       transform: [
-        { rotateZ: `${rotation.value}deg` }
+        { rotateZ: `${rotation.value}deg` },
+        { translateY: flip7TranslateY.value }
       ]
     };
   });
@@ -224,7 +248,6 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
 
   const shakeTranslateX = useSharedValue(0);
   const shakeTranslateY = useSharedValue(0);
-  const flip7Scale = useSharedValue(1);
   const borderPulse = useSharedValue(0);
   const freezeProgress = useSharedValue(0); // 0 to 1
   const shineProgress = useSharedValue(0); // 0 to 1
@@ -293,21 +316,6 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
   }, [isBustShakeActive, shakeTranslateX, shakeTranslateY]);
 
   useEffect(() => {
-    if (isFlip7) {
-      flip7Scale.value = withRepeat(
-        withSequence(
-          withTiming(1.02, { duration: 1000 }),
-          withTiming(1, { duration: 1000 })
-        ),
-        -1, // infinite
-        true
-      );
-    } else {
-      flip7Scale.value = withTiming(1);
-    }
-  }, [isFlip7, flip7Scale]);
-
-  useEffect(() => {
     if (shouldShowSecondChanceBorder) {
       borderPulse.value = withRepeat(
         withSequence(
@@ -335,8 +343,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
     return {
       transform: [
         { translateX: shakeTranslateX.value },
-        { translateY: shakeTranslateY.value },
-        { scale: flip7Scale.value }
+        { translateY: shakeTranslateY.value }
       ],
       borderColor,
       borderWidth,
@@ -588,6 +595,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                         overlapOffset={i === 0 ? 0 : -rem(2)}
                         isFrozen={isFrozen}
                         freezeProgress={freezeProgress}
+                        isFlip7={isFlip7}
                       />
                     );
                   })}
@@ -624,6 +632,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                         overlapOffset={actualIndex === 0 ? 0 : -rem(2)}
                         isFrozen={isFrozen}
                         freezeProgress={freezeProgress}
+                        isFlip7={isFlip7}
                       />
                     );
                   })}
@@ -680,6 +689,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                           overlapOffset={i === 0 ? 0 : cardSpacing}
                           isFrozen={isFrozen}
                           freezeProgress={freezeProgress}
+                          isFlip7={isFlip7}
                         />
                       );
                     })}
@@ -716,6 +726,7 @@ export const PlayerHand = forwardRef<View, PlayerHandProps>(function PlayerHand(
                           overlapOffset={actualIndex === 0 ? 0 : cardSpacing}
                           isFrozen={isFrozen}
                           freezeProgress={freezeProgress}
+                          isFlip7={isFlip7}
                         />
                       );
                     })}
