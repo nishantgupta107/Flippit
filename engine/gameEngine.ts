@@ -338,10 +338,10 @@ export function resolveCard(state: GameState, playerId: string, card: Card): Gam
 
   if (card.type === 'ACTION_FLIP_THREE') {
     nextState = discardActionCard(nextState, card);
-    if (activePlayers(nextState).length <= 1) {
-      return resolveFlipThreeTarget(nextState, playerId);
-    }
-
+    // Always surface a FLIP_THREE_TARGET pending action — even when only 1
+    // active player remains. The store layer decides whether to show the
+    // interactive overlay (human alone → tension reveal) or auto-resolve
+    // (bot alone → synchronous engine resolution).
     return syncPhase({
       ...nextState,
       pendingAction: {
@@ -577,6 +577,15 @@ export function applyFreezeEffect(state: GameState, targetPlayerId: string): Gam
  */
 export function resolveSecondChanceEffect(state: GameState, targetPlayerId: string): GameState {
   return resolveSecondChanceTarget(state, targetPlayerId);
+}
+
+/**
+ * Deals 3 cards to `targetPlayerId` and resolves each one synchronously.
+ * Used by the store when a bot is the Flip Three acting player — no overlay
+ * is shown and resolution proceeds directly through the engine.
+ */
+export function resolveFlipThreeForBot(state: GameState, targetPlayerId: string): GameState {
+  return resolveFlipThreeTarget(state, targetPlayerId);
 }
 
 export function drawForPlayer(state: GameState, playerId: string): GameState {

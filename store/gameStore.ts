@@ -97,6 +97,39 @@ interface GameStoreState {
 }
 
 const BOT_DELAY_MS = 600;
+/** Milliseconds between each auto-revealed card slot when a bot is involved. */
+const BOT_REVEAL_INTERVAL_MS = 700;
+
+// ─── Auto-reveal helpers ──────────────────────────────────────────────────────
+
+/**
+ * Returns true when the overlay should run fully in spectator / auto mode:
+ * either the acting player or the card-receiving target is a bot.
+ */
+function isAutoRevealMode(overlay: FlipThreeOverlayState, gameState: GameState): boolean {
+  const acting = gameState.players.find(p => p.id === overlay.actingPlayerId);
+  const target = gameState.players.find(p => p.id === overlay.targetPlayerId);
+  return (acting?.isBot ?? false) || (target?.isBot ?? false);
+}
+
+/**
+ * Picks a deterministic sub-action target for bot auto-resolution:
+ * - SECOND_CHANCE_TARGET → prefer player without a shield
+ * - FREEZE_TARGET / FLIP_THREE_CHAIN_TARGET → prefer highest total score
+ */
+function pickAutoSubTarget(subAction: FlipThreeSubAction, state: GameState): string | null {
+  const { type, validTargetIds } = subAction;
+  const valid = state.players.filter(p => validTargetIds.includes(p.id));
+  if (valid.length === 0) return null;
+
+  if (type === 'SECOND_CHANCE_TARGET') {
+    const noShield = valid.filter(p => !p.hasShield);
+    return (noShield[0] ?? valid[0]).id;
+  }
+
+  // FREEZE_TARGET / FLIP_THREE_CHAIN_TARGET: pick the player with the highest total
+  return valid.reduce((leader, p) => (p.totalScore > leader.totalScore ? p : leader), valid[0]).id;
+}
 
 function getCurrentPlayer(state: GameState) {
   return state.players[state.currentPlayerIndex] ?? null;
@@ -218,7 +251,18 @@ function scheduleBotTurn(
     if (!shouldRunBots(latestState)) return;
 
     if (latestState.pendingAction) {
-      const target = getBotActionTarget(latestState, latestState.pendingAction.actingPlayerId);
+      const { type, actingPlayerId } = latestState.pendingAction;
+
+      // Bot drew Flip Three — open the overlay in spectator mode.
+      // scheduleAutoReveal (defined inside the store) will fire auto-reveals.
+      if (type === 'FLIP_THREE_TARGET') {
+        const target = getBotActionTarget(latestState, actingPlayerId);
+        if (!target) return;
+        get().selectFlipThreeTarget(target);
+        return;
+      }
+
+      const target = getBotActionTarget(latestState, actingPlayerId);
       if (!target) return;
       const nextState = resolvePendingAction(latestState, target);
       handleGameStateTransition(nextState, set, get, () => scheduleBotTurn(set, get));
@@ -283,33 +327,47 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     finalState = { ...finalState, pendingAction: undefined, pendingActionPassCount: undefined };
 
     if (chainTargetId) {
-      // Start the inner (chained) Flip Three overlay directly — skip target_select.
       const chainTarget = finalState.players.find(p => p.id === chainTargetId);
-      const innerPeeked = peekFlipThreeCards(finalState.deck, 3);
-      const innerSlots: FlipThreeSlot[] = innerPeeked.map(card => ({
-        card,
-        revealed: false,
-        effect: null,
-      }));
+      const hasActivePlayers = finalState.players.some(p => p.active);
 
-      const innerOverlay: FlipThreeOverlayState = {
-        phase: 'revealing',
-        actingPlayerId,
-        targetPlayerId: chainTargetId,
-        targetName: chainTarget?.name ?? chainTargetId,
-        slots: innerSlots,
-        checkpointState: finalState,
-        locked: false,
-        subAction: null,
-        chainTargetId: null,
-      };
+      // Guard: if the chain target was knocked out (bust/freeze) during this reveal,
+      // or no active players remain, the chained Flip Three has no valid target.
+      // Discard it and fall through to the normal turn-advance / round-over path.
+      if (!chainTarget?.active || !hasActivePlayers || finalState.roundOver) {
+        // Fall through — handled by the advanceToNextPlayer block below.
+      } else {
+        // Start the inner (chained) Flip Three overlay directly — skip target_select.
+        const innerPeeked = peekFlipThreeCards(finalState.deck, 3);
+        const innerSlots: FlipThreeSlot[] = innerPeeked.map(card => ({
+          card,
+          revealed: false,
+          effect: null,
+        }));
 
-      set({
-        gameState: finalState,
-        flipThreeOverlay: innerOverlay,
-        displayedActivePlayerId: actingPlayerId,
-      });
-      return;
+        const innerOverlay: FlipThreeOverlayState = {
+          phase: 'revealing',
+          actingPlayerId,
+          targetPlayerId: chainTargetId,
+          targetName: chainTarget.name,
+          slots: innerSlots,
+          checkpointState: finalState,
+          locked: false,
+          subAction: null,
+          chainTargetId: null,
+        };
+
+        set({
+          gameState: finalState,
+          flipThreeOverlay: innerOverlay,
+          displayedActivePlayerId: actingPlayerId,
+        });
+
+        // Kick off auto-reveal for the inner overlay if needed.
+        if (isAutoRevealMode(innerOverlay, finalState)) {
+          scheduleAutoReveal(chainTargetId);
+        }
+        return;
+      }
     }
 
     // No chain: advance to the next player and resume normal flow.
@@ -332,6 +390,41 @@ export const useGameStore = create<GameStoreState>((set, get) => {
         finalizeFlipThree();
       }
     }, 300);
+  };
+
+  // ── scheduleAutoReveal — reveals the next unrevealed slot after a delay ──────
+  // Called when the overlay is in auto-mode (bot actor or bot target). Chains
+  // reactively: one reveal fires, then the next is scheduled only once the
+  // previous slot is confirmed revealed, handling early-exit (bust/freeze) safely.
+  const scheduleAutoReveal = (targetPlayerId: string) => {
+    setTimeout(() => {
+      const current = get().flipThreeOverlay;
+      const gs = get().gameState;
+      if (!current || !gs) return;
+      if (current.targetPlayerId !== targetPlayerId) return; // Different overlay opened
+      if (current.locked || current.phase !== 'revealing') return;
+      if (!isAutoRevealMode(current, gs)) return;
+
+      const nextIndex = current.slots.findIndex(s => !s.revealed);
+      if (nextIndex === -1) return;
+
+      get().revealFlipThreeSlot(nextIndex);
+    }, BOT_REVEAL_INTERVAL_MS);
+  };
+
+  // ── scheduleAutoSubTarget — auto-resolves a mid-reveal sub-action ───────────
+  const scheduleAutoSubTarget = (targetPlayerId: string) => {
+    setTimeout(() => {
+      const current = get().flipThreeOverlay;
+      const gs = get().gameState;
+      if (!current || !gs) return;
+      if (current.targetPlayerId !== targetPlayerId) return;
+      if (current.phase !== 'sub_action' || !current.subAction) return;
+      if (!isAutoRevealMode(current, gs)) return;
+
+      const picked = pickAutoSubTarget(current.subAction, current.checkpointState);
+      if (picked) get().selectFlipThreeSubTarget(picked);
+    }, BOT_REVEAL_INTERVAL_MS);
   };
 
   return {
@@ -445,6 +538,14 @@ export const useGameStore = create<GameStoreState>((set, get) => {
           chainTargetId: null,
         },
       });
+
+      // Kick off auto-reveal when either the actor or the target is a bot.
+      // scheduleAutoReveal chains reactively slot-by-slot, handling mid-reveal
+      // sub-actions (freeze, second chance, nested flip three) correctly.
+      const actingPlayer = checkpointState.players.find(p => p.id === actingPlayerId);
+      if ((actingPlayer?.isBot ?? false) || target.isBot) {
+        scheduleAutoReveal(targetPlayerId);
+      }
     },
 
     // ── revealFlipThreeSlot ───────────────────────────────────────────────────
@@ -594,6 +695,16 @@ export const useGameStore = create<GameStoreState>((set, get) => {
 
       if (isNowLocked) {
         scheduleFinalise();
+      } else {
+        // Auto mode: schedule the next reveal or auto-resolve the sub-action.
+        const gs = get().gameState;
+        if (gs && isAutoRevealMode(updatedOverlay, gs)) {
+          if (subAction) {
+            scheduleAutoSubTarget(targetPlayerId);
+          } else {
+            scheduleAutoReveal(targetPlayerId);
+          }
+        }
       }
     },
 
@@ -644,6 +755,12 @@ export const useGameStore = create<GameStoreState>((set, get) => {
 
       if (isNowLocked) {
         scheduleFinalise();
+      } else {
+        // Sub-action resolved — schedule the next slot auto-reveal if in auto mode.
+        const gs = get().gameState;
+        if (gs && isAutoRevealMode(updatedOverlay, gs)) {
+          scheduleAutoReveal(updatedOverlay.targetPlayerId);
+        }
       }
     },
 

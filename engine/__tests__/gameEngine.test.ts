@@ -195,7 +195,7 @@ describe('resolveCard', () => {
     });
   });
 
-  it('self targets flip three when alone', () => {
+  it('surfaces FLIP_THREE_TARGET pending action when alone (store handles solo resolution)', () => {
     const state = createState({
       deck: [
         { id: 'NUMBER_7_1', type: 'NUMBER', value: 7 },
@@ -213,8 +213,17 @@ describe('resolveCard', () => {
       value: 0,
     });
 
-    expect(getPlayer(nextState, 'p1').hand).toHaveLength(3);
-    expect(nextState.pendingAction).toBeUndefined();
+    // Engine now always surfaces a FLIP_THREE_TARGET pending action — even solo.
+    // The store (scheduleBotTurn / selectFlipThreeTarget) is responsible for
+    // deciding whether to show the interactive overlay (human) or resolve
+    // directly through the engine (bot / bot-alone).
+    expect(nextState.pendingAction).toEqual({
+      type: 'FLIP_THREE_TARGET',
+      actingPlayerId: 'p1',
+    });
+    // Cards should NOT yet be in the hand — resolution happens when the pending
+    // action is resolved by the store.
+    expect(getPlayer(nextState, 'p1').hand).toHaveLength(0);
   });
 
   it('keeps second chance when acting player has no shield', () => {

@@ -247,6 +247,17 @@ export function FlipThreeOverlay() {
 
   const isVisible = isTargetSelectPhase || (flipThreeOverlay !== null);
 
+  // Issue 2 fix: when the human is the last active player, skip the target-select
+  // popup and go straight to the card-reveal overlay with themselves as the target.
+  useEffect(() => {
+    if (!isTargetSelectPhase || !gameState || !humanPlayer) return;
+    const activePlayers = gameState.players.filter(p => p.active);
+    if (activePlayers.length === 1 && activePlayers[0].id === humanPlayer.id) {
+      selectFlipThreeTarget(humanPlayer.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTargetSelectPhase]);
+
   if (!isVisible || !gameState) return null;
 
   const phase = flipThreeOverlay?.phase ?? 'target_select';
